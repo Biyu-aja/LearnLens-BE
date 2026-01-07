@@ -1,0 +1,124 @@
+// Prisma Schema for LearnLens - AI-Powered Tutoring App
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model with password auth
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  password       String // Hashed password
+  preferredModel String    @default("gemini-2.5-flash-lite") // AI model preference
+  maxTokens      Int       @default(1000) // Max tokens for generation
+  emailVerified  DateTime?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  accounts  Account[]
+  sessions  Session[]
+  materials Material[]
+
+  @@map("users")
+}
+
+// NextAuth Account model
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// NextAuth Session model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Verification Token for email verification
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Learning Material - uploaded by user
+model Material {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text // Extracted text from PDF or raw text
+  type      String // "pdf" or "text"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Owner
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  messages Message[]
+  quizzes  Quiz[]
+  summary  String?   @db.Text // AI-generated summary
+
+  @@map("materials")
+}
+
+// Chat Message - conversation history
+model Message {
+  id        String   @id @default(cuid())
+  role      String // "user" or "assistant"
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  // Parent material
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// Quiz - generated questions for a material
+model Quiz {
+  id        String   @id @default(cuid())
+  question  String   @db.Text
+  options   String[] // Array of answer options
+  answer    Int // Index of correct answer
+  createdAt DateTime @default(now())
+
+  // Parent material
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@map("quizzes")
+}
