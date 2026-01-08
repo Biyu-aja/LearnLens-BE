@@ -32,32 +32,57 @@ router.get("/:materialId/concepts", async (req: Request, res: Response): Promise
     }
 });
 
-// POST /api/ai/:materialId/quiz - Generate quiz questions
+// POST /api/ai/:materialId/quiz - Generate quiz questions with configuration
 router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<void> => {
     try {
-        const count = parseInt(req.body.count) || 5;
+        const {
+            count = 10,
+            difficulty = "medium",
+            model,
+            materialIds = [],
+            customText = ""
+        } = req.body;
 
-        const material = await prisma.material.findFirst({
+        // If no materialIds provided, use the route param materialId
+        const targetMaterialIds = materialIds.length > 0 ? materialIds : [req.params.materialId];
+
+        // Fetch all selected materials
+        const materials = await prisma.material.findMany({
             where: {
-                id: req.params.materialId,
+                id: { in: targetMaterialIds },
                 userId: req.user!.id,
             },
         });
 
-        if (!material) {
-            res.status(404).json({ error: "Material not found" });
+        if (materials.length === 0 && !customText.trim()) {
+            res.status(400).json({ error: "No materials found or custom text provided" });
             return;
         }
 
-        // Generate quiz questions using AI
-        const questions = await generateQuiz(material.content, count);
+        // Combine content from all materials
+        let combinedContent = materials.map(m =>
+            `## ${m.title}\n\n${m.content}`
+        ).join("\n\n---\n\n");
+
+        // Add custom text if provided
+        if (customText.trim()) {
+            combinedContent += `\n\n---\n\n## Additional Content\n\n${customText}`;
+        }
+
+        // Generate quiz questions using AI with configuration
+        const questions = await generateQuiz(combinedContent, count, model, difficulty);
 
         if (questions.length === 0) {
             res.status(500).json({ error: "Failed to generate quiz questions" });
             return;
         }
 
-        // Save quiz questions to database
+        // Delete existing quizzes for the main material
+        await prisma.quiz.deleteMany({
+            where: { materialId: req.params.materialId },
+        });
+
+        // Save quiz questions to database (linked to the main material)
         const savedQuizzes = await Promise.all(
             questions.map((q) =>
                 prisma.quiz.create({
@@ -65,7 +90,7 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
                         question: q.question,
                         options: q.options,
                         answer: q.answer,
-                        materialId: material.id,
+                        materialId: req.params.materialId,
                     },
                 })
             )

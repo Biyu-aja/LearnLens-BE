@@ -278,4 +278,57 @@ router.post(
     }
 );
 
+// DELETE /api/materials/:id/summary - Delete summary for a material
+router.delete("/:id/summary", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.material.update({
+            where: { id: req.params.id },
+            data: { summary: null },
+        });
+
+        res.json({ success: true, message: "Summary deleted" });
+    } catch (error) {
+        console.error("Error deleting summary:", error);
+        res.status(500).json({ error: "Failed to delete summary" });
+    }
+});
+
+// DELETE /api/materials/:id/quizzes - Delete all quizzes for a material
+router.delete("/:id/quizzes", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.quiz.deleteMany({
+            where: { materialId: req.params.id },
+        });
+
+        res.json({ success: true, message: "Quizzes deleted" });
+    } catch (error) {
+        console.error("Error deleting quizzes:", error);
+        res.status(500).json({ error: "Failed to delete quizzes" });
+    }
+});
+
 export default router;
