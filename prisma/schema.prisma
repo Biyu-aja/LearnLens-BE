@@ -90,6 +90,7 @@ model Material {
   messages Message[]
   quizzes  Quiz[]
   summary  String?   @db.Text // AI-generated summary
+  glossary String?   @db.Text // AI-generated glossary (JSON)
 
   @@map("materials")
 }

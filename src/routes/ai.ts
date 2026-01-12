@@ -156,4 +156,110 @@ router.delete("/:materialId/quiz", async (req: Request, res: Response): Promise<
     }
 });
 
+// POST /api/ai/:materialId/glossary - Generate glossary for a material
+router.post("/:materialId/glossary", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { model } = req.body;
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Import generateGlossary dynamically to avoid circular dependency
+        const { generateGlossary } = await import("../lib/ai");
+
+        const glossary = await generateGlossary(material.content, model);
+
+        if (glossary.length === 0) {
+            res.status(500).json({ error: "Failed to generate glossary" });
+            return;
+        }
+
+        // Save glossary to material metadata
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                glossary: JSON.stringify(glossary),
+            },
+        });
+
+        res.json({ success: true, glossary });
+    } catch (error) {
+        console.error("Error generating glossary:", error);
+        res.status(500).json({ error: "Failed to generate glossary" });
+    }
+});
+
+// GET /api/ai/:materialId/glossary - Get saved glossary for a material
+router.get("/:materialId/glossary", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+            select: {
+                id: true,
+                glossary: true,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        let glossary = [];
+        if (material.glossary) {
+            try {
+                glossary = JSON.parse(material.glossary as string);
+            } catch (e) {
+                glossary = [];
+            }
+        }
+
+        res.json({ success: true, glossary });
+    } catch (error) {
+        console.error("Error fetching glossary:", error);
+        res.status(500).json({ error: "Failed to fetch glossary" });
+    }
+});
+
+// DELETE /api/ai/:materialId/glossary - Delete glossary for a material
+router.delete("/:materialId/glossary", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                glossary: null,
+            },
+        });
+
+        res.json({ success: true, message: "Glossary deleted" });
+    } catch (error) {
+        console.error("Error deleting glossary:", error);
+        res.status(500).json({ error: "Failed to delete glossary" });
+    }
+});
+
 export default router;

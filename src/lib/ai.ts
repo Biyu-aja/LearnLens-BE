@@ -46,9 +46,18 @@ export async function generateSummary(content: string, model?: string): Promise<
             messages: [
                 {
                     role: "system",
-                    content: `You are an educational assistant. Create a clear, concise summary of the provided learning material. 
-Focus on the main concepts and key takeaways. Format your response in markdown for easy reading.
-Keep the summary focused and helpful for learning.`,
+                    content: `You are an educational assistant. Create a clear, well-structured summary of the provided learning material.
+
+FORMATTING GUIDELINES:
+- Use **bold** for key terms and important concepts
+- Use numbered lists (1. 2. 3.) for sequential steps, processes, or ordered items
+- Use bullet points (-) only for unordered lists
+- Use headings (## or ###) to organize different sections
+- Use 'single quotes' to highlight specific terms or definitions that are important
+- Keep paragraphs short and focused
+- IMPORTANT: For lists, use SINGLE line breaks between items (no blank lines between list items)
+
+Focus on the main concepts and key takeaways. Make the summary easy to read and helpful for learning.`,
                 },
                 {
                     role: "user",
@@ -78,12 +87,16 @@ export async function generateKeyConcepts(content: string, model?: string): Prom
             {
                 role: "system",
                 content: `You are an educational assistant. Extract and explain the key concepts from the learning material.
-For each concept:
-1. Name the concept
-2. Provide a clear, simple explanation
-3. Give a brief example if applicable
 
-Format your response in markdown with clear headings.`,
+FORMATTING GUIDELINES:
+1. Use numbered lists (1. 2. 3.) for each concept
+2. Use **bold** for concept names
+3. Use 'single quotes' for important terms or definitions
+4. Provide clear, simple explanations
+5. Include brief examples when applicable
+6. IMPORTANT: Use SINGLE line breaks between list items (no blank lines between items)
+
+Format your response in markdown with clear headings (## or ###).`,
             },
             {
                 role: "user",
@@ -94,6 +107,77 @@ Format your response in markdown with clear headings.`,
     });
 
     return response.choices[0]?.message?.content || "Unable to extract key concepts.";
+}
+
+// Glossary term interface
+export interface GlossaryTerm {
+    term: string;
+    definition: string;
+    category?: string;
+}
+
+// Generate glossary from the material content
+export async function generateGlossary(content: string, model?: string): Promise<GlossaryTerm[]> {
+    try {
+        const response = await ai.chat.completions.create({
+            model: model || defaultModel,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are an educational assistant that extracts key terminology and vocabulary from learning materials.
+
+Your task is to identify important terms, technical vocabulary, acronyms, and concepts that a learner should understand.
+
+IMPORTANT RULES:
+1. Extract 5-15 key terms from the material
+2. For each term, provide a clear and concise definition (1-2 sentences)
+3. Optionally categorize terms (e.g., "Technical", "Concept", "Acronym", "Process")
+4. Use the SAME LANGUAGE as the source material for definitions
+5. Focus on terms that are:
+   - Technical or specialized vocabulary
+   - Acronyms or abbreviations
+   - Key concepts central to the topic
+   - Terms that might be unfamiliar to beginners
+
+Respond ONLY with valid JSON in this exact format (no other text):
+{
+  "glossary": [
+    {
+      "term": "Term Name",
+      "definition": "Clear definition of the term",
+      "category": "Category"
+    }
+  ]
+}`,
+                },
+                {
+                    role: "user",
+                    content: `Extract key terms and create a glossary from this material:\n\n${content.slice(0, 8000)}`,
+                },
+            ],
+            max_tokens: 2000,
+        });
+
+        try {
+            const text = response.choices[0]?.message?.content || "{}";
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) return [];
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed.glossary || [];
+        } catch (e) {
+            console.error("Failed to parse glossary response:", e);
+            return [];
+        }
+    } catch (error: any) {
+        // Fallback to default model if specific model fails
+        if (model && model !== defaultModel) {
+            console.warn(`Glossary model ${model} failed, retrying with default...`);
+            return generateGlossary(content, defaultModel);
+        }
+        console.error("AI Glossary Error:", error);
+        return [];
+    }
 }
 
 // Quiz question interface
@@ -210,12 +294,38 @@ export async function chatWithMaterial(
             messages: [
                 {
                     role: "system",
-                    content: `You are an educational tutor helping a student understand their learning material.
+                    content: `You are **LearnLens**, an AI-powered educational tutor. Your role is to help students understand their learning materials effectively.
+
+IDENTITY:
+- Your name is "LearnLens"
+- You are a helpful, encouraging, and knowledgeable tutor
+- Always introduce yourself as LearnLens when greeting users
+
 IMPORTANT: Only answer questions based on the provided material below. If asked about something not in the material, politely explain that you can only help with content from their uploaded document.
 
 === LEARNING MATERIAL ===
 ${content.slice(0, 6000)}
 === END OF MATERIAL ===
+
+RESPONSE FORMATTING RULES (MUST FOLLOW):
+1. Use **bold** for key terms, important concepts, and emphasis
+2. Use numbered lists (1. 2. 3.) for sequential steps, processes, or ordered items
+3. Use bullet points (-) only for unordered lists
+4. Use 'single quotes' to highlight specific terms or definitions
+5. Use headings (## or ###) for organizing longer explanations
+
+CRITICAL SPACING RULE:
+- When writing lists, put each item on consecutive lines with NO blank lines between them
+- Example of CORRECT format:
+  1. First item
+  2. Second item
+  3. Third item
+- Example of WRONG format (DO NOT DO THIS):
+  1. First item
+
+  2. Second item
+
+  3. Third item
 
 Be helpful, encouraging, and explain concepts clearly. Use examples from the material when possible.`,
                 },
