@@ -331,4 +331,68 @@ router.delete("/:id/quizzes", async (req: Request, res: Response): Promise<void>
     }
 });
 
+// DELETE /api/materials/:id/messages - Delete all messages for a material (clear chat)
+router.delete("/:id/messages", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.message.deleteMany({
+            where: { materialId: req.params.id },
+        });
+
+        res.json({ success: true, message: "All messages deleted" });
+    } catch (error) {
+        console.error("Error deleting messages:", error);
+        res.status(500).json({ error: "Failed to delete messages" });
+    }
+});
+
+// DELETE /api/materials/:id/messages/:messageId - Delete a single message
+router.delete("/:id/messages/:messageId", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        const message = await prisma.message.findFirst({
+            where: {
+                id: req.params.messageId,
+                materialId: req.params.id,
+            },
+        });
+
+        if (!message) {
+            res.status(404).json({ error: "Message not found" });
+            return;
+        }
+
+        await prisma.message.delete({
+            where: { id: req.params.messageId },
+        });
+
+        res.json({ success: true, message: "Message deleted" });
+    } catch (error) {
+        console.error("Error deleting message:", error);
+        res.status(500).json({ error: "Failed to delete message" });
+    }
+});
+
 export default router;

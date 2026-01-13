@@ -262,4 +262,120 @@ router.delete("/:materialId/glossary", async (req: Request, res: Response): Prom
     }
 });
 
+// POST /api/ai/:materialId/glossary/term - Add a single term to glossary
+router.post("/:materialId/glossary/term", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { term, model } = req.body;
+
+        if (!term || typeof term !== "string" || term.trim().length === 0) {
+            res.status(400).json({ error: "Term is required" });
+            return;
+        }
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Get existing glossary
+        let existingGlossary: { term: string; definition: string; category?: string }[] = [];
+        if (material.glossary) {
+            try {
+                existingGlossary = JSON.parse(material.glossary as string);
+            } catch (e) {
+                existingGlossary = [];
+            }
+        }
+
+        // Check if term already exists
+        const termExists = existingGlossary.some(
+            (g) => g.term.toLowerCase() === term.trim().toLowerCase()
+        );
+        if (termExists) {
+            res.status(400).json({ error: "Term already exists in glossary" });
+            return;
+        }
+
+        // Generate definition using AI
+        const { default: ai } = await import("../lib/ai");
+        const defaultModel = "gemini-2.5-flash-lite";
+
+        const response = await ai.chat.completions.create({
+            model: model || defaultModel,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are an educational assistant. Generate a clear, concise definition for the given term based on the learning material context.
+
+RULES:
+1. Keep the definition to 1-2 sentences max
+2. Use simple, clear language
+3. Respond ONLY with valid JSON in this format (no other text):
+{
+  "term": "Term Name",
+  "definition": "Clear definition",
+  "category": "Category (Technical/Concept/Acronym/Process/General)"
+}`,
+                },
+                {
+                    role: "user",
+                    content: `Define this term based on the context of the material:
+
+TERM: "${term.trim()}"
+
+MATERIAL CONTEXT (for reference):
+${material.content.slice(0, 3000)}`,
+                },
+            ],
+            max_tokens: 300,
+        });
+
+        const responseText = response.choices[0]?.message?.content || "";
+
+        let newTerm: { term: string; definition: string; category?: string };
+        try {
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+                // Fallback: create simple entry
+                newTerm = {
+                    term: term.trim(),
+                    definition: `Definition for "${term.trim()}" - please regenerate glossary for full definitions.`,
+                    category: "General",
+                };
+            } else {
+                newTerm = JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            newTerm = {
+                term: term.trim(),
+                definition: responseText.slice(0, 200) || `A term from the learning material.`,
+                category: "General",
+            };
+        }
+
+        // Add to glossary
+        existingGlossary.push(newTerm);
+
+        // Save updated glossary
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                glossary: JSON.stringify(existingGlossary),
+            },
+        });
+
+        res.json({ success: true, term: newTerm, glossary: existingGlossary });
+    } catch (error) {
+        console.error("Error adding term to glossary:", error);
+        res.status(500).json({ error: "Failed to add term to glossary" });
+    }
+});
+
 export default router;
