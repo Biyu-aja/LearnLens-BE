@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authMiddleware } from "../middleware/auth";
-import { chatWithMaterial } from "../lib/ai";
+import { chatWithMaterial, chatWithMaterialStream } from "../lib/ai";
 
 const router = Router();
 
@@ -36,7 +36,7 @@ router.get("/:materialId", async (req: Request, res: Response): Promise<void> =>
     }
 });
 
-// POST /api/chat/:materialId - Send a message and get AI response
+// POST /api/chat/:materialId - Send a message and get AI response (non-streaming)
 router.post("/:materialId", async (req: Request, res: Response): Promise<void> => {
     try {
         const { message } = req.body;
@@ -109,6 +109,101 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
     }
 });
 
+// POST /api/chat/:materialId/stream - Send a message and get streaming AI response
+router.post("/:materialId/stream", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { message } = req.body;
+
+        if (!message || typeof message !== "string") {
+            res.status(400).json({ error: "Message is required" });
+            return;
+        }
+
+        // Verify material belongs to user
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+            include: {
+                messages: {
+                    orderBy: { createdAt: "asc" },
+                    take: 10,
+                },
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Save user message first
+        const userMessage = await prisma.message.create({
+            data: {
+                role: "user",
+                content: message,
+                materialId: material.id,
+            },
+        });
+
+        // Build message history for AI
+        const chatHistory = material.messages.map((m: { role: string; content: string }) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+        }));
+        chatHistory.push({ role: "user", content: message });
+
+        // Set up SSE headers
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+        res.flushHeaders();
+
+        // Send user message ID first
+        res.write(`data: ${JSON.stringify({ type: "user_message", message: userMessage })}\n\n`);
+
+        let fullContent = "";
+
+        try {
+            // Stream AI response
+            await chatWithMaterialStream(
+                material.content,
+                chatHistory,
+                req.user!.preferredModel,
+                req.user!.maxTokens,
+                (chunk: string) => {
+                    fullContent += chunk;
+                    res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);
+                }
+            );
+
+            // Save the complete assistant message to database
+            const assistantMessage = await prisma.message.create({
+                data: {
+                    role: "assistant",
+                    content: fullContent,
+                    materialId: material.id,
+                },
+            });
+
+            // Send completion event with full message
+            res.write(`data: ${JSON.stringify({ type: "done", message: assistantMessage })}\n\n`);
+        } catch (streamError) {
+            console.error("Stream error:", streamError);
+            res.write(`data: ${JSON.stringify({ type: "error", error: "Failed to generate response" })}\n\n`);
+        }
+
+        res.end();
+    } catch (error) {
+        console.error("Error in streaming chat:", error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: "Failed to process message" });
+        }
+    }
+});
+
 // DELETE /api/chat/:materialId - Clear chat history
 router.delete("/:materialId", async (req: Request, res: Response): Promise<void> => {
     try {
@@ -137,3 +232,4 @@ router.delete("/:materialId", async (req: Request, res: Response): Promise<void>
 });
 
 export default router;
+

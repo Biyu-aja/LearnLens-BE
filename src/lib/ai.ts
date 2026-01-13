@@ -1,4 +1,15 @@
 import OpenAI from "openai";
+import {
+    SUMMARY_SYSTEM_PROMPT,
+    getSummaryUserPrompt,
+    KEY_CONCEPTS_SYSTEM_PROMPT,
+    getKeyConceptsUserPrompt,
+    GLOSSARY_SYSTEM_PROMPT,
+    getGlossaryUserPrompt,
+    getQuizSystemPrompt,
+    getQuizUserPrompt,
+    getChatSystemPrompt,
+} from "./prompts";
 
 // Get configuration from environment
 const apiKey = process.env.AI_API_KEY;
@@ -44,32 +55,14 @@ export async function generateSummary(content: string, model?: string): Promise<
         const response = await ai.chat.completions.create({
             model: model || defaultModel,
             messages: [
-                {
-                    role: "system",
-                    content: `You are an educational assistant. Create a clear, well-structured summary of the provided learning material.
-
-FORMATTING GUIDELINES:
-- Use **bold** for key terms and important concepts
-- Use numbered lists (1. 2. 3.) for sequential steps, processes, or ordered items
-- Use bullet points (-) only for unordered lists
-- Use headings (## or ###) to organize different sections
-- Use 'single quotes' to highlight specific terms or definitions that are important
-- Keep paragraphs short and focused
-- IMPORTANT: For lists, use SINGLE line breaks between items (no blank lines between list items)
-
-Focus on the main concepts and key takeaways. Make the summary easy to read and helpful for learning.`,
-                },
-                {
-                    role: "user",
-                    content: `Please summarize this learning material:\n\n${content.slice(0, 8000)}`,
-                },
+                { role: "system", content: SUMMARY_SYSTEM_PROMPT },
+                { role: "user", content: getSummaryUserPrompt(content) },
             ],
             max_tokens: 1000,
         });
 
         return response.choices[0]?.message?.content || "Unable to generate summary.";
     } catch (error: any) {
-        // Fallback to default model if specific model fails
         if (model && model !== defaultModel) {
             console.warn(`Model ${model} failed, retrying with default...`);
             return generateSummary(content, defaultModel);
@@ -84,24 +77,8 @@ export async function generateKeyConcepts(content: string, model?: string): Prom
     const response = await ai.chat.completions.create({
         model: model || defaultModel,
         messages: [
-            {
-                role: "system",
-                content: `You are an educational assistant. Extract and explain the key concepts from the learning material.
-
-FORMATTING GUIDELINES:
-1. Use numbered lists (1. 2. 3.) for each concept
-2. Use **bold** for concept names
-3. Use 'single quotes' for important terms or definitions
-4. Provide clear, simple explanations
-5. Include brief examples when applicable
-6. IMPORTANT: Use SINGLE line breaks between list items (no blank lines between items)
-
-Format your response in markdown with clear headings (## or ###).`,
-            },
-            {
-                role: "user",
-                content: `Extract key concepts from this material:\n\n${content.slice(0, 8000)}`,
-            },
+            { role: "system", content: KEY_CONCEPTS_SYSTEM_PROMPT },
+            { role: "user", content: getKeyConceptsUserPrompt(content) },
         ],
         max_tokens: 1500,
     });
@@ -122,38 +99,8 @@ export async function generateGlossary(content: string, model?: string): Promise
         const response = await ai.chat.completions.create({
             model: model || defaultModel,
             messages: [
-                {
-                    role: "system",
-                    content: `You are an educational assistant that extracts key terminology and vocabulary from learning materials.
-
-Your task is to identify important terms, technical vocabulary, acronyms, and concepts that a learner should understand.
-
-IMPORTANT RULES:
-1. Extract 5-15 key terms from the material
-2. For each term, provide a clear and concise definition (1-2 sentences)
-3. Optionally categorize terms (e.g., "Technical", "Concept", "Acronym", "Process")
-4. Use the SAME LANGUAGE as the source material for definitions
-5. Focus on terms that are:
-   - Technical or specialized vocabulary
-   - Acronyms or abbreviations
-   - Key concepts central to the topic
-   - Terms that might be unfamiliar to beginners
-
-Respond ONLY with valid JSON in this exact format (no other text):
-{
-  "glossary": [
-    {
-      "term": "Term Name",
-      "definition": "Clear definition of the term",
-      "category": "Category"
-    }
-  ]
-}`,
-                },
-                {
-                    role: "user",
-                    content: `Extract key terms and create a glossary from this material:\n\n${content.slice(0, 8000)}`,
-                },
+                { role: "system", content: GLOSSARY_SYSTEM_PROMPT },
+                { role: "user", content: getGlossaryUserPrompt(content) },
             ],
             max_tokens: 2000,
         });
@@ -170,7 +117,6 @@ Respond ONLY with valid JSON in this exact format (no other text):
             return [];
         }
     } catch (error: any) {
-        // Fallback to default model if specific model fails
         if (model && model !== defaultModel) {
             console.warn(`Glossary model ${model} failed, retrying with default...`);
             return generateGlossary(content, defaultModel);
@@ -188,26 +134,6 @@ export interface QuizQuestion {
     explanation?: string;
 }
 
-// Difficulty descriptions for AI prompt
-const difficultyPrompts = {
-    easy: `Create EASY questions that:
-- Test basic recall and recognition of facts
-- Use straightforward language
-- Have clearly distinguishable answer options
-- Focus on "what", "who", "when" type questions`,
-    medium: `Create MEDIUM difficulty questions that:
-- Test understanding and application of concepts  
-- Require some analysis to answer correctly
-- Include some similar-looking answer options that require careful reading
-- Focus on "how", "why", and "explain" type questions`,
-    hard: `Create HARD questions that:
-- Test critical thinking and deep analysis
-- Require synthesis of multiple concepts
-- Include nuanced answer options that require careful consideration
-- Focus on application, analysis, and evaluation
-- May include scenario-based questions`
-};
-
 // Generate quiz questions from the material
 export async function generateQuiz(
     content: string,
@@ -216,47 +142,13 @@ export async function generateQuiz(
     difficulty: "easy" | "medium" | "hard" = "medium"
 ): Promise<QuizQuestion[]> {
     try {
-        const difficultyGuide = difficultyPrompts[difficulty];
-
         const response = await ai.chat.completions.create({
             model: model || defaultModel,
             messages: [
-                {
-                    role: "system",
-                    content: `You are an expert educational assessment creator. Your task is to create high-quality multiple-choice quiz questions based STRICTLY on the provided learning material.
-
-${difficultyGuide}
-
-IMPORTANT RULES:
-1. Create EXACTLY ${count} questions
-2. Each question MUST have exactly 4 options (A, B, C, D)
-3. Only ONE option should be correct
-4. Questions must be based ONLY on the provided material - do not add external information
-5. Distribute questions across different topics/sections in the material
-6. Avoid trivial or obvious questions
-7. Make incorrect options plausible but clearly wrong when analyzed
-8. Include a brief explanation for why the correct answer is right
-
-Respond in this EXACT JSON format (and ONLY this JSON, no other text):
-{
-  "questions": [
-    {
-      "question": "Question text here?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "answer": 0,
-      "explanation": "Brief explanation of why this is correct"
-    }
-  ]
-}
-
-The "answer" field should be the index (0-3) of the correct option.`,
-                },
-                {
-                    role: "user",
-                    content: `Generate ${count} ${difficulty.toUpperCase()} difficulty quiz questions from this material:\n\n${content.slice(0, 12000)}`,
-                },
+                { role: "system", content: getQuizSystemPrompt(count, difficulty) },
+                { role: "user", content: getQuizUserPrompt(content, count, difficulty) },
             ],
-            max_tokens: Math.min(4000, count * 300), // Scale tokens with question count
+            max_tokens: Math.min(4000, count * 300),
         });
 
         try {
@@ -271,7 +163,6 @@ The "answer" field should be the index (0-3) of the correct option.`,
             return [];
         }
     } catch (error: any) {
-        // Fallback to default model if specific model fails
         if (model && model !== defaultModel) {
             console.warn(`Quiz model ${model} failed, retrying with default...`);
             return generateQuiz(content, count, defaultModel);
@@ -292,43 +183,7 @@ export async function chatWithMaterial(
         const response = await ai.chat.completions.create({
             model: model || defaultModel,
             messages: [
-                {
-                    role: "system",
-                    content: `You are **LearnLens**, an AI-powered educational tutor. Your role is to help students understand their learning materials effectively.
-
-IDENTITY:
-- Your name is "LearnLens"
-- You are a helpful, encouraging, and knowledgeable tutor
-- Always introduce yourself as LearnLens when greeting users
-
-IMPORTANT: Only answer questions based on the provided material below. If asked about something not in the material, politely explain that you can only help with content from their uploaded document.
-
-=== LEARNING MATERIAL ===
-${content.slice(0, 6000)}
-=== END OF MATERIAL ===
-
-RESPONSE FORMATTING RULES (MUST FOLLOW):
-1. Use **bold** for key terms, important concepts, and emphasis
-2. Use numbered lists (1. 2. 3.) for sequential steps, processes, or ordered items
-3. Use bullet points (-) only for unordered lists
-4. Use 'single quotes' to highlight specific terms or definitions
-5. Use headings (## or ###) for organizing longer explanations
-
-CRITICAL SPACING RULE:
-- When writing lists, put each item on consecutive lines with NO blank lines between them
-- Example of CORRECT format:
-  1. First item
-  2. Second item
-  3. Third item
-- Example of WRONG format (DO NOT DO THIS):
-  1. First item
-
-  2. Second item
-
-  3. Third item
-
-Be helpful, encouraging, and explain concepts clearly. Use examples from the material when possible.`,
-                },
+                { role: "system", content: getChatSystemPrompt(content) },
                 ...messages.map((m) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content,
@@ -339,7 +194,6 @@ Be helpful, encouraging, and explain concepts clearly. Use examples from the mat
 
         return response.choices[0]?.message?.content || "I couldn't generate a response.";
     } catch (error: any) {
-        // Fallback to default model if specific model fails
         if (model && model !== defaultModel) {
             console.warn(`Chat model ${model} failed, retrying with default...`);
             return chatWithMaterial(content, messages, defaultModel, maxTokens);
@@ -349,4 +203,50 @@ Be helpful, encouraging, and explain concepts clearly. Use examples from the mat
     }
 }
 
+// Chat with the material using streaming
+export async function chatWithMaterialStream(
+    content: string,
+    messages: { role: "user" | "assistant"; content: string }[],
+    model?: string,
+    maxTokens?: number,
+    onChunk?: (chunk: string) => void
+): Promise<string> {
+    try {
+        const stream = await ai.chat.completions.create({
+            model: model || defaultModel,
+            messages: [
+                { role: "system", content: getChatSystemPrompt(content) },
+                ...messages.map((m) => ({
+                    role: m.role as "user" | "assistant",
+                    content: m.content,
+                })),
+            ],
+            max_tokens: maxTokens || 1000,
+            stream: true,
+        });
+
+        let fullContent = "";
+
+        for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content || "";
+            if (delta) {
+                fullContent += delta;
+                if (onChunk) {
+                    onChunk(delta);
+                }
+            }
+        }
+
+        return fullContent || "I couldn't generate a response.";
+    } catch (error: any) {
+        if (model && model !== defaultModel) {
+            console.warn(`Stream model ${model} failed, retrying with default...`);
+            return chatWithMaterialStream(content, messages, defaultModel, maxTokens, onChunk);
+        }
+        console.error("AI Stream Error:", error);
+        throw error;
+    }
+}
+
 export default ai;
+
