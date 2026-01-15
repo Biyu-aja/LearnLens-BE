@@ -59,8 +59,15 @@ Your tone should be calm, supportive, and educational.
 `;
 
 
-export const getSummaryUserPrompt = (content: string) =>
-    `Please summarize this learning material:\n\n${content.slice(0, 8000)}`;
+export const getSummaryUserPrompt = (content: string, customInstructions?: string) => {
+  let prompt = `Please summarize this learning material:\n\n${content.slice(0, 8000)}`;
+
+  if (customInstructions && customInstructions.trim()) {
+    prompt += `\n\n=== ADDITIONAL INSTRUCTIONS FROM USER ===\n${customInstructions.trim()}\n=== END OF INSTRUCTIONS ===`;
+  }
+
+  return prompt;
+};
 
 // ============================================
 // KEY CONCEPTS PROMPT
@@ -87,7 +94,7 @@ Use markdown with clear headings.
 `;
 
 export const getKeyConceptsUserPrompt = (content: string) =>
-    `Extract key concepts from this material:\n\n${content.slice(0, 8000)}`;
+  `Extract key concepts from this material:\n\n${content.slice(0, 8000)}`;
 
 // ============================================
 // GLOSSARY PROMPT
@@ -120,26 +127,26 @@ Respond ONLY with valid JSON in this exact format (no other text):
 }`;
 
 export const getGlossaryUserPrompt = (content: string) =>
-    `Extract key terms and create a glossary from this material:\n\n${content.slice(0, 8000)}`;
+  `Extract key terms and create a glossary from this material:\n\n${content.slice(0, 8000)}`;
 
 // ============================================
 // QUIZ DIFFICULTY PROMPTS
 // ============================================
 
 export const QUIZ_DIFFICULTY_PROMPTS = {
-    easy: `Create EASY questions that:
+  easy: `Create EASY questions that:
 - Test basic recall and recognition of facts
 - Use straightforward language
 - Have clearly distinguishable answer options
 - Focus on "what", "who", "when" type questions`,
 
-    medium: `Create MEDIUM difficulty questions that:
+  medium: `Create MEDIUM difficulty questions that:
 - Test understanding and application of concepts  
 - Require some analysis to answer correctly
 - Include some similar-looking answer options that require careful reading
 - Focus on "how", "why", and "explain" type questions`,
 
-    hard: `Create HARD questions that:
+  hard: `Create HARD questions that:
 - Test critical thinking and deep analysis
 - Require synthesis of multiple concepts
 - Include nuanced answer options that require careful consideration
@@ -148,9 +155,9 @@ export const QUIZ_DIFFICULTY_PROMPTS = {
 };
 
 export const getQuizSystemPrompt = (count: number, difficulty: "easy" | "medium" | "hard") => {
-    const difficultyGuide = QUIZ_DIFFICULTY_PROMPTS[difficulty];
+  const difficultyGuide = QUIZ_DIFFICULTY_PROMPTS[difficulty];
 
-    return `You are an expert educational assessment creator. Your task is to create high-quality multiple-choice quiz questions based STRICTLY on the provided learning material.
+  return `You are an expert educational assessment creator. Your task is to create high-quality multiple-choice quiz questions based STRICTLY on the provided learning material.
 
 ${difficultyGuide}
 
@@ -163,6 +170,11 @@ IMPORTANT RULES:
 6. Avoid trivial or obvious questions
 7. Make incorrect options plausible but clearly wrong when analyzed
 8. Include a brief explanation for why the correct answer is right
+9. Include a HINT for each question that:
+   - Guides the learner to think about the concept without giving away the answer
+   - Could be a guiding question, a related concept to consider, or a clue
+   - Should make the learner THINK, not just reveal the answer
+   - Examples: "Think about what happens when..." or "Consider the relationship between X and Y" or "Remember the key principle of..."
 
 Respond in this EXACT JSON format (and ONLY this JSON, no other text):
 {
@@ -171,6 +183,7 @@ Respond in this EXACT JSON format (and ONLY this JSON, no other text):
       "question": "Question text here?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "answer": 0,
+      "hint": "A helpful clue that guides thinking without revealing the answer",
       "explanation": "Brief explanation of why this is correct"
     }
   ]
@@ -179,8 +192,15 @@ Respond in this EXACT JSON format (and ONLY this JSON, no other text):
 The "answer" field should be the index (0-3) of the correct option.`;
 };
 
-export const getQuizUserPrompt = (content: string, count: number, difficulty: string) =>
-    `Generate ${count} ${difficulty.toUpperCase()} difficulty quiz questions from this material:\n\n${content.slice(0, 12000)}`;
+export const getQuizUserPrompt = (content: string, count: number, difficulty: string, customInstructions?: string) => {
+  let prompt = `Generate ${count} ${difficulty.toUpperCase()} difficulty quiz questions from this material:\n\n${content.slice(0, 12000)}`;
+
+  if (customInstructions && customInstructions.trim()) {
+    prompt += `\n\n=== ADDITIONAL INSTRUCTIONS FROM USER ===\n${customInstructions.trim()}\n=== END OF INSTRUCTIONS ===`;
+  }
+
+  return prompt;
+};
 
 // ============================================
 // CHAT PROMPT

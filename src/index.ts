@@ -11,6 +11,7 @@ import authRoutes from "./routes/auth";
 import materialsRoutes from "./routes/materials";
 import chatRoutes from "./routes/chat";
 import aiRoutes from "./routes/ai";
+import analyticsRoutes from "./routes/analytics";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/materials", materialsRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

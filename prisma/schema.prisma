@@ -17,15 +17,21 @@ model User {
   password       String // Hashed password
   preferredModel String    @default("gemini-2.5-flash-lite") // AI model preference
   maxTokens      Int       @default(1000) // Max tokens for generation
+  maxContext     Int       @default(8000) // Max characters of content sent to AI
+  customApiUrl   String? // Custom API URL (optional)
+  customApiKey   String? // Custom API key (optional, encrypted)
+  customModel    String? // Custom model name for custom API (e.g., "gpt-4o", "claude-3-opus")
   emailVerified  DateTime?
   image          String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   // Relations
-  accounts  Account[]
-  sessions  Session[]
-  materials Material[]
+  accounts      Account[]
+  sessions      Session[]
+  materials     Material[]
+  studySessions StudySession[]
+  quizAttempts  QuizAttempt[]
 
   @@map("users")
 }
@@ -87,10 +93,12 @@ model Material {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Relations
-  messages Message[]
-  quizzes  Quiz[]
-  summary  String?   @db.Text // AI-generated summary
-  glossary String?   @db.Text // AI-generated glossary (JSON)
+  messages      Message[]
+  quizzes       Quiz[]
+  studySessions StudySession[]
+  quizAttempts  QuizAttempt[]
+  summary       String?        @db.Text // AI-generated summary
+  glossary      String?        @db.Text // AI-generated glossary (JSON)
 
   @@map("materials")
 }
@@ -115,6 +123,7 @@ model Quiz {
   question  String   @db.Text
   options   String[] // Array of answer options
   answer    Int // Index of correct answer
+  hint      String?  @db.Text // Helpful clue to guide thinking
   createdAt DateTime @default(now())
 
   // Parent material
@@ -122,4 +131,44 @@ model Quiz {
   material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
 
   @@map("quizzes")
+}
+
+// Learning Analytics - track study sessions
+model StudySession {
+  id        String    @id @default(cuid())
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  duration  Int? // Duration in seconds
+
+  // What was studied
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  // Who studied
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("study_sessions")
+}
+
+// Quiz Attempt - track quiz performance
+model QuizAttempt {
+  id             String @id @default(cuid())
+  score          Int // Correct answers
+  totalQuestions Int // Total questions
+  percentage     Float // Score percentage
+
+  // Which material
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  // Who attempted
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("quiz_attempts")
 }

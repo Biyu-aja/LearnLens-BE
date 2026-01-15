@@ -197,6 +197,8 @@ router.put("/:id", async (req: Request, res: Response): Promise<void> => {
 // POST /api/materials/:id/summary - Generate AI summary
 router.post("/:id/summary", async (req: Request, res: Response): Promise<void> => {
     try {
+        const { model, customText } = req.body;
+
         const material = await prisma.material.findFirst({
             where: {
                 id: req.params.id,
@@ -209,8 +211,8 @@ router.post("/:id/summary", async (req: Request, res: Response): Promise<void> =
             return;
         }
 
-        // Generate summary using AI
-        const summary = await generateSummary(material.content);
+        // Generate summary using AI with optional model and custom instructions
+        const summary = await generateSummary(material.content, model, customText);
 
         // Save summary to database
         await prisma.material.update({

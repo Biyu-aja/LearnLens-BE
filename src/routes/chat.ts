@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authMiddleware } from "../middleware/auth";
-import { chatWithMaterial, chatWithMaterialStream } from "../lib/ai";
+import { chatWithMaterial, chatWithMaterialStream, CustomAPIConfig } from "../lib/ai";
 
 const router = Router();
 
@@ -81,12 +81,20 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
         }));
         chatHistory.push({ role: "user", content: message });
 
-        // Get AI response using user's preferred model
+        // Build custom API config from user settings
+        const customConfig: CustomAPIConfig | undefined = req.user!.customApiUrl ? {
+            customApiUrl: req.user!.customApiUrl,
+            customApiKey: req.user!.customApiKey,
+            customModel: req.user!.customModel,
+        } : undefined;
+
+        // Get AI response using user's preferred model (or custom API)
         const aiResponse = await chatWithMaterial(
             material.content,
             chatHistory,
             req.user!.preferredModel,
-            req.user!.maxTokens
+            req.user!.maxTokens,
+            customConfig
         );
 
         // Save assistant message
@@ -166,6 +174,13 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
 
         let fullContent = "";
 
+        // Build custom API config from user settings
+        const customConfig: CustomAPIConfig | undefined = req.user!.customApiUrl ? {
+            customApiUrl: req.user!.customApiUrl,
+            customApiKey: req.user!.customApiKey,
+            customModel: req.user!.customModel,
+        } : undefined;
+
         try {
             // Stream AI response
             await chatWithMaterialStream(
@@ -176,7 +191,8 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
                 (chunk: string) => {
                     fullContent += chunk;
                     res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);
-                }
+                },
+                customConfig
             );
 
             // Save the complete assistant message to database

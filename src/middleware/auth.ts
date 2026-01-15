@@ -13,6 +13,10 @@ declare global {
                 image?: string;
                 preferredModel: string;
                 maxTokens: number;
+                maxContext: number;
+                customApiUrl?: string;
+                customApiKey?: string;
+                customModel?: string;
             };
         }
     }
@@ -53,8 +57,12 @@ export async function authMiddleware(
             email: user.email,
             name: user.name || undefined,
             image: user.image || undefined,
-            preferredModel: user.preferredModel || "gemini-2.5-flash-lite", // Fallback if null in DB
+            preferredModel: user.preferredModel || "gemini-2.5-flash-lite",
             maxTokens: user.maxTokens || 1000,
+            maxContext: (user as any).maxContext || 8000,
+            customApiUrl: (user as any).customApiUrl || undefined,
+            customApiKey: (user as any).customApiKey || undefined,
+            customModel: (user as any).customModel || undefined,
         };
 
         next();

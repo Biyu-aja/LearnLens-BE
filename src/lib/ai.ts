@@ -43,39 +43,83 @@ if (!apiKey) {
     console.log(`🤖 AI configured with default model: ${defaultModel}`);
 }
 
-// Initialize OpenAI client with custom gateway (HaluAI)
-const ai = new OpenAI({
+// Initialize default OpenAI client with custom gateway (HaluAI)
+const defaultAI = new OpenAI({
     apiKey: apiKey || "dummy-key-for-init",
     baseURL: baseURL,
 });
 
+// User custom API configuration interface
+export interface CustomAPIConfig {
+    customApiUrl?: string;
+    customApiKey?: string;
+    customModel?: string;
+}
+
+// Get AI client - uses custom API if configured, otherwise default
+function getAIClient(customConfig?: CustomAPIConfig): { client: OpenAI; model: string } {
+    // If custom API is configured, create a new client
+    if (customConfig?.customApiUrl && customConfig?.customApiKey) {
+        console.log(`🔧 Using custom API: ${customConfig.customApiUrl}`);
+        const customClient = new OpenAI({
+            apiKey: customConfig.customApiKey,
+            baseURL: customConfig.customApiUrl,
+        });
+        return {
+            client: customClient,
+            model: customConfig.customModel || defaultModel,
+        };
+    }
+
+    // Otherwise use default
+    return {
+        client: defaultAI,
+        model: defaultModel,
+    };
+}
+
 // Generate a summary of the material content
-export async function generateSummary(content: string, model?: string): Promise<string> {
+export async function generateSummary(
+    content: string,
+    model?: string,
+    customInstructions?: string,
+    customConfig?: CustomAPIConfig
+): Promise<string> {
     try {
-        const response = await ai.chat.completions.create({
-            model: model || defaultModel,
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
             messages: [
                 { role: "system", content: SUMMARY_SYSTEM_PROMPT },
-                { role: "user", content: getSummaryUserPrompt(content) },
+                { role: "user", content: getSummaryUserPrompt(content, customInstructions) },
             ],
-            max_tokens: 1000,
+            max_tokens: 1500,
         });
 
         return response.choices[0]?.message?.content || "Unable to generate summary.";
     } catch (error: any) {
-        if (model && model !== defaultModel) {
-            console.warn(`Model ${model} failed, retrying with default...`);
-            return generateSummary(content, defaultModel);
-        }
         console.error("AI Summary Error:", error);
+        // If using custom API and it fails, don't fallback - let user know
+        if (customConfig?.customApiUrl) {
+            return "Failed to connect to your custom API. Please check your API URL and key.";
+        }
         return "Unable to generate summary due to AI service error.";
     }
 }
 
 // Generate key concepts from the material
-export async function generateKeyConcepts(content: string, model?: string): Promise<string> {
-    const response = await ai.chat.completions.create({
-        model: model || defaultModel,
+export async function generateKeyConcepts(
+    content: string,
+    model?: string,
+    customConfig?: CustomAPIConfig
+): Promise<string> {
+    const { client, model: aiModel } = getAIClient(customConfig);
+    const useModel = customConfig?.customModel || model || aiModel;
+
+    const response = await client.chat.completions.create({
+        model: useModel,
         messages: [
             { role: "system", content: KEY_CONCEPTS_SYSTEM_PROMPT },
             { role: "user", content: getKeyConceptsUserPrompt(content) },
@@ -94,10 +138,17 @@ export interface GlossaryTerm {
 }
 
 // Generate glossary from the material content
-export async function generateGlossary(content: string, model?: string): Promise<GlossaryTerm[]> {
+export async function generateGlossary(
+    content: string,
+    model?: string,
+    customConfig?: CustomAPIConfig
+): Promise<GlossaryTerm[]> {
     try {
-        const response = await ai.chat.completions.create({
-            model: model || defaultModel,
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
             messages: [
                 { role: "system", content: GLOSSARY_SYSTEM_PROMPT },
                 { role: "user", content: getGlossaryUserPrompt(content) },
@@ -117,10 +168,6 @@ export async function generateGlossary(content: string, model?: string): Promise
             return [];
         }
     } catch (error: any) {
-        if (model && model !== defaultModel) {
-            console.warn(`Glossary model ${model} failed, retrying with default...`);
-            return generateGlossary(content, defaultModel);
-        }
         console.error("AI Glossary Error:", error);
         return [];
     }
@@ -131,6 +178,7 @@ export interface QuizQuestion {
     question: string;
     options: string[];
     answer: number;
+    hint?: string;
     explanation?: string;
 }
 
@@ -139,14 +187,19 @@ export async function generateQuiz(
     content: string,
     count: number = 10,
     model?: string,
-    difficulty: "easy" | "medium" | "hard" = "medium"
+    difficulty: "easy" | "medium" | "hard" = "medium",
+    customInstructions?: string,
+    customConfig?: CustomAPIConfig
 ): Promise<QuizQuestion[]> {
     try {
-        const response = await ai.chat.completions.create({
-            model: model || defaultModel,
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
             messages: [
                 { role: "system", content: getQuizSystemPrompt(count, difficulty) },
-                { role: "user", content: getQuizUserPrompt(content, count, difficulty) },
+                { role: "user", content: getQuizUserPrompt(content, count, difficulty, customInstructions) },
             ],
             max_tokens: Math.min(4000, count * 300),
         });
@@ -163,10 +216,6 @@ export async function generateQuiz(
             return [];
         }
     } catch (error: any) {
-        if (model && model !== defaultModel) {
-            console.warn(`Quiz model ${model} failed, retrying with default...`);
-            return generateQuiz(content, count, defaultModel);
-        }
         console.error("AI Quiz Error:", error);
         return [];
     }
@@ -177,11 +226,15 @@ export async function chatWithMaterial(
     content: string,
     messages: { role: "user" | "assistant"; content: string }[],
     model?: string,
-    maxTokens?: number
+    maxTokens?: number,
+    customConfig?: CustomAPIConfig
 ): Promise<string> {
     try {
-        const response = await ai.chat.completions.create({
-            model: model || defaultModel,
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
             messages: [
                 { role: "system", content: getChatSystemPrompt(content) },
                 ...messages.map((m) => ({
@@ -194,11 +247,10 @@ export async function chatWithMaterial(
 
         return response.choices[0]?.message?.content || "I couldn't generate a response.";
     } catch (error: any) {
-        if (model && model !== defaultModel) {
-            console.warn(`Chat model ${model} failed, retrying with default...`);
-            return chatWithMaterial(content, messages, defaultModel, maxTokens);
-        }
         console.error("AI Chat Error:", error);
+        if (customConfig?.customApiUrl) {
+            return "Failed to connect to your custom API. Please check your settings.";
+        }
         return "I apologize, but I'm having trouble connecting to the AI service right now. Please try again later.";
     }
 }
@@ -209,11 +261,17 @@ export async function chatWithMaterialStream(
     messages: { role: "user" | "assistant"; content: string }[],
     model?: string,
     maxTokens?: number,
-    onChunk?: (chunk: string) => void
+    onChunk?: (chunk: string) => void,
+    customConfig?: CustomAPIConfig
 ): Promise<string> {
     try {
-        const stream = await ai.chat.completions.create({
-            model: model || defaultModel,
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        console.log(`🤖 Streaming with model: ${useModel}${customConfig?.customApiUrl ? ' (Custom API)' : ''}`);
+
+        const stream = await client.chat.completions.create({
+            model: useModel,
             messages: [
                 { role: "system", content: getChatSystemPrompt(content) },
                 ...messages.map((m) => ({
@@ -239,14 +297,9 @@ export async function chatWithMaterialStream(
 
         return fullContent || "I couldn't generate a response.";
     } catch (error: any) {
-        if (model && model !== defaultModel) {
-            console.warn(`Stream model ${model} failed, retrying with default...`);
-            return chatWithMaterialStream(content, messages, defaultModel, maxTokens, onChunk);
-        }
         console.error("AI Stream Error:", error);
         throw error;
     }
 }
 
-export default ai;
-
+export default defaultAI;

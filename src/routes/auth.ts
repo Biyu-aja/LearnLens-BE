@@ -57,6 +57,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
                 name: user.name,
                 image: user.image,
                 preferredModel: user.preferredModel,
+                maxTokens: user.maxTokens,
+                maxContext: user.maxContext,
             },
             token,
         });
@@ -101,6 +103,11 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
                 name: user.name,
                 image: user.image,
                 preferredModel: user.preferredModel,
+                maxTokens: user.maxTokens,
+                maxContext: user.maxContext,
+                customApiUrl: user.customApiUrl,
+                customModel: (user as any).customModel,
+                hasCustomApiKey: !!user.customApiKey,
             },
             token,
         });
@@ -135,10 +142,10 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
             return;
         }
 
-        const { name, preferredModel, maxTokens } = req.body;
+        const { name, preferredModel, maxTokens, maxContext, customApiUrl, customApiKey, customModel } = req.body;
 
-        // Validate model if provided
-        if (preferredModel) {
+        // Validate model if provided (skip validation if using custom API)
+        if (preferredModel && !customApiUrl) {
             const validModel = AI_MODELS.find(m => m.id === preferredModel);
             if (!validModel) {
                 res.status(400).json({ error: "Invalid model selected" });
@@ -146,13 +153,19 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
             }
         }
 
+        // Build update data
+        const updateData: Record<string, unknown> = {};
+        if (name !== undefined) updateData.name = name;
+        if (preferredModel !== undefined) updateData.preferredModel = preferredModel;
+        if (maxTokens !== undefined) updateData.maxTokens = Number(maxTokens);
+        if (maxContext !== undefined) updateData.maxContext = Number(maxContext);
+        if (customApiUrl !== undefined) updateData.customApiUrl = customApiUrl || null;
+        if (customApiKey !== undefined) updateData.customApiKey = customApiKey || null;
+        if (customModel !== undefined) updateData.customModel = customModel || null;
+
         const updatedUser = await prisma.user.update({
             where: { id: req.user.id },
-            data: {
-                ...(name !== undefined && { name }),
-                ...(preferredModel !== undefined && { preferredModel }),
-                ...(maxTokens !== undefined && { maxTokens: Number(maxTokens) }),
-            },
+            data: updateData,
         });
 
         res.json({
@@ -164,6 +177,11 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
                 image: updatedUser.image,
                 preferredModel: updatedUser.preferredModel,
                 maxTokens: updatedUser.maxTokens,
+                maxContext: updatedUser.maxContext,
+                customApiUrl: updatedUser.customApiUrl,
+                customModel: (updatedUser as any).customModel,
+                // Don't expose full API key, just indicate if it's set
+                hasCustomApiKey: !!updatedUser.customApiKey,
             },
         });
     } catch (error) {

@@ -40,7 +40,7 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
             difficulty = "medium",
             model,
             materialIds = [],
-            customText = ""
+            customText = ""  // Now used as custom instructions, not additional content
         } = req.body;
 
         // If no materialIds provided, use the route param materialId
@@ -54,23 +54,19 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
             },
         });
 
-        if (materials.length === 0 && !customText.trim()) {
-            res.status(400).json({ error: "No materials found or custom text provided" });
+        if (materials.length === 0) {
+            res.status(400).json({ error: "No materials found" });
             return;
         }
 
         // Combine content from all materials
-        let combinedContent = materials.map(m =>
+        const combinedContent = materials.map(m =>
             `## ${m.title}\n\n${m.content}`
         ).join("\n\n---\n\n");
 
-        // Add custom text if provided
-        if (customText.trim()) {
-            combinedContent += `\n\n---\n\n## Additional Content\n\n${customText}`;
-        }
-
         // Generate quiz questions using AI with configuration
-        const questions = await generateQuiz(combinedContent, count, model, difficulty);
+        // customText is now passed as custom instructions (e.g., "Use Indonesian language", "Focus on Chapter 1")
+        const questions = await generateQuiz(combinedContent, count, model, difficulty, customText.trim() || undefined);
 
         if (questions.length === 0) {
             res.status(500).json({ error: "Failed to generate quiz questions" });
@@ -90,6 +86,7 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
                         question: q.question,
                         options: q.options,
                         answer: q.answer,
+                        hint: q.hint || null,
                         materialId: req.params.materialId,
                     },
                 })
