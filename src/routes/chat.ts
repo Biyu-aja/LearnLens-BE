@@ -39,7 +39,7 @@ router.get("/:materialId", async (req: Request, res: Response): Promise<void> =>
 // POST /api/chat/:materialId - Send a message and get AI response (non-streaming)
 router.post("/:materialId", async (req: Request, res: Response): Promise<void> => {
     try {
-        const { message } = req.body;
+        const { message, language = "id" } = req.body;
 
         if (!message || typeof message !== "string") {
             res.status(400).json({ error: "Message is required" });
@@ -95,7 +95,8 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
             req.user!.preferredModel,
             req.user!.maxTokens,
             req.user!.maxContext,
-            customConfig
+            customConfig,
+            language as "id" | "en"
         );
 
         // Save assistant message
@@ -121,7 +122,7 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
 // POST /api/chat/:materialId/stream - Send a message and get streaming AI response
 router.post("/:materialId/stream", async (req: Request, res: Response): Promise<void> => {
     try {
-        const { message } = req.body;
+        const { message, language = "id" } = req.body;
 
         if (!message || typeof message !== "string") {
             res.status(400).json({ error: "Message is required" });
@@ -183,7 +184,7 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
         } : undefined;
 
         try {
-            // Stream AI response
+            // Stream AI response with language support
             await chatWithMaterialStream(
                 material.content,
                 chatHistory,
@@ -194,7 +195,8 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
                     fullContent += chunk;
                     res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);
                 },
-                customConfig
+                customConfig,
+                language as "id" | "en"
             );
 
             // Save the complete assistant message to database

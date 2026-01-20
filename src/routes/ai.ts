@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authMiddleware } from "../middleware/auth";
-import { generateQuiz, generateKeyConcepts } from "../lib/ai";
+import { generateQuiz, generateKeyConcepts, generateFlashcards, generateGlossary } from "../lib/ai";
+import type { Language } from "../lib/prompts";
 
 const router = Router();
 
@@ -40,7 +41,8 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
             difficulty = "medium",
             model,
             materialIds = [],
-            customText = ""  // Now used as custom instructions, not additional content
+            customText = "",  // Now used as custom instructions, not additional content
+            language = "en"   // Language for quiz generation
         } = req.body;
 
         // If no materialIds provided, use the route param materialId
@@ -64,9 +66,8 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
             `## ${m.title}\n\n${m.content}`
         ).join("\n\n---\n\n");
 
-        // Generate quiz questions using AI with configuration
-        // customText is now passed as custom instructions (e.g., "Use Indonesian language", "Focus on Chapter 1")
-        const questions = await generateQuiz(combinedContent, count, model, difficulty, customText.trim() || undefined);
+        // Generate quiz questions using AI with configuration and language
+        const questions = await generateQuiz(combinedContent, count, model, difficulty, customText.trim() || undefined, undefined, language as Language);
 
         if (questions.length === 0) {
             res.status(500).json({ error: "Failed to generate quiz questions" });
@@ -156,7 +157,7 @@ router.delete("/:materialId/quiz", async (req: Request, res: Response): Promise<
 // POST /api/ai/:materialId/glossary - Generate glossary for a material
 router.post("/:materialId/glossary", async (req: Request, res: Response): Promise<void> => {
     try {
-        const { model } = req.body;
+        const { model, language = "en" } = req.body;
 
         const material = await prisma.material.findFirst({
             where: {
@@ -173,7 +174,7 @@ router.post("/:materialId/glossary", async (req: Request, res: Response): Promis
         // Import generateGlossary dynamically to avoid circular dependency
         const { generateGlossary } = await import("../lib/ai");
 
-        const glossary = await generateGlossary(material.content, model);
+        const glossary = await generateGlossary(material.content, model, undefined, language as Language);
 
         if (glossary.length === 0) {
             res.status(500).json({ error: "Failed to generate glossary" });
@@ -452,5 +453,116 @@ PENTING:
     }
 });
 
+// POST /api/ai/:materialId/flashcards - Generate flashcards from material
+router.post("/:materialId/flashcards", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { count = 10, language = "en" } = req.body;
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Generate flashcards using AI
+        const flashcards = await generateFlashcards(
+            material.content,
+            count,
+            undefined,
+            undefined,
+            language as Language
+        );
+
+        if (flashcards.length === 0) {
+            res.status(500).json({ error: "Failed to generate flashcards" });
+            return;
+        }
+
+        // Save flashcards to material (as JSON in a field)
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                flashcards: JSON.stringify(flashcards),
+            },
+        });
+
+        res.json({ success: true, flashcards });
+    } catch (error) {
+        console.error("Error generating flashcards:", error);
+        res.status(500).json({ error: "Failed to generate flashcards" });
+    }
+});
+
+// GET /api/ai/:materialId/flashcards - Get saved flashcards for a material
+router.get("/:materialId/flashcards", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+            select: {
+                id: true,
+                flashcards: true,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        let flashcards = [];
+        if (material.flashcards) {
+            try {
+                flashcards = JSON.parse(material.flashcards as string);
+            } catch (e) {
+                flashcards = [];
+            }
+        }
+
+        res.json({ success: true, flashcards });
+    } catch (error) {
+        console.error("Error fetching flashcards:", error);
+        res.status(500).json({ error: "Failed to fetch flashcards" });
+    }
+});
+
+// DELETE /api/ai/:materialId/flashcards - Delete flashcards for a material
+router.delete("/:materialId/flashcards", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                flashcards: null,
+            },
+        });
+
+        res.json({ success: true, message: "Flashcards deleted" });
+    } catch (error) {
+        console.error("Error deleting flashcards:", error);
+        res.status(500).json({ error: "Failed to delete flashcards" });
+    }
+});
+
 export default router;
+
 

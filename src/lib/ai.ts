@@ -1,14 +1,17 @@
 import OpenAI from "openai";
 import {
-    SUMMARY_SYSTEM_PROMPT,
+    getSummarySystemPrompt,
     getSummaryUserPrompt,
-    KEY_CONCEPTS_SYSTEM_PROMPT,
+    getKeyConceptsSystemPrompt,
     getKeyConceptsUserPrompt,
-    GLOSSARY_SYSTEM_PROMPT,
+    getGlossarySystemPrompt,
     getGlossaryUserPrompt,
     getQuizSystemPrompt,
     getQuizUserPrompt,
     getChatSystemPrompt,
+    getFlashcardSystemPrompt,
+    getFlashcardUserPrompt,
+    type Language,
 } from "./prompts";
 
 // Get configuration from environment
@@ -91,7 +94,8 @@ export async function generateSummary(
     content: string,
     model?: string,
     customInstructions?: string,
-    customConfig?: CustomAPIConfig
+    customConfig?: CustomAPIConfig,
+    language: Language = "id"
 ): Promise<string> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
@@ -100,7 +104,7 @@ export async function generateSummary(
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: SUMMARY_SYSTEM_PROMPT },
+                { role: "system", content: getSummarySystemPrompt(language) },
                 { role: "user", content: getSummaryUserPrompt(content, customInstructions) },
             ],
             max_tokens: 1500,
@@ -121,7 +125,8 @@ export async function generateSummary(
 export async function generateKeyConcepts(
     content: string,
     model?: string,
-    customConfig?: CustomAPIConfig
+    customConfig?: CustomAPIConfig,
+    language: Language = "id"
 ): Promise<string> {
     const { client, model: aiModel } = getAIClient(customConfig);
     const useModel = customConfig?.customModel || model || aiModel;
@@ -129,7 +134,7 @@ export async function generateKeyConcepts(
     const response = await client.chat.completions.create({
         model: useModel,
         messages: [
-            { role: "system", content: KEY_CONCEPTS_SYSTEM_PROMPT },
+            { role: "system", content: getKeyConceptsSystemPrompt(language) },
             { role: "user", content: getKeyConceptsUserPrompt(content) },
         ],
         max_tokens: 1500,
@@ -149,7 +154,8 @@ export interface GlossaryTerm {
 export async function generateGlossary(
     content: string,
     model?: string,
-    customConfig?: CustomAPIConfig
+    customConfig?: CustomAPIConfig,
+    language: Language = "id"
 ): Promise<GlossaryTerm[]> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
@@ -158,7 +164,7 @@ export async function generateGlossary(
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: GLOSSARY_SYSTEM_PROMPT },
+                { role: "system", content: getGlossarySystemPrompt(language) },
                 { role: "user", content: getGlossaryUserPrompt(content) },
             ],
             max_tokens: 2000,
@@ -197,7 +203,8 @@ export async function generateQuiz(
     model?: string,
     difficulty: "easy" | "medium" | "hard" = "medium",
     customInstructions?: string,
-    customConfig?: CustomAPIConfig
+    customConfig?: CustomAPIConfig,
+    language: Language = "id"
 ): Promise<QuizQuestion[]> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
@@ -206,7 +213,7 @@ export async function generateQuiz(
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: getQuizSystemPrompt(count, difficulty) },
+                { role: "system", content: getQuizSystemPrompt(count, difficulty, language) },
                 { role: "user", content: getQuizUserPrompt(content, count, difficulty, customInstructions) },
             ],
             max_tokens: Math.min(4000, count * 300),
@@ -229,6 +236,51 @@ export async function generateQuiz(
     }
 }
 
+// Flashcard interface
+export interface Flashcard {
+    front: string;
+    back: string;
+    category?: string;
+}
+
+// Generate flashcards from the material
+export async function generateFlashcards(
+    content: string,
+    count: number = 10,
+    model?: string,
+    customConfig?: CustomAPIConfig,
+    language: Language = "en"
+): Promise<Flashcard[]> {
+    try {
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
+            messages: [
+                { role: "system", content: getFlashcardSystemPrompt(count, language) },
+                { role: "user", content: getFlashcardUserPrompt(content, count) },
+            ],
+            max_tokens: Math.min(3000, count * 200),
+        });
+
+        try {
+            const text = response.choices[0]?.message?.content || "{}";
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) return [];
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed.flashcards || [];
+        } catch (e) {
+            console.error("Failed to parse flashcards response:", e);
+            return [];
+        }
+    } catch (error: any) {
+        console.error("AI Flashcards Error:", error);
+        return [];
+    }
+}
+
 // Chat with the material (answer questions based on content)
 export async function chatWithMaterial(
     content: string,
@@ -236,7 +288,8 @@ export async function chatWithMaterial(
     model?: string,
     maxTokens?: number,
     maxContext?: number,
-    customConfig?: CustomAPIConfig
+    customConfig?: CustomAPIConfig,
+    language: Language = "id"
 ): Promise<string> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
@@ -246,7 +299,7 @@ export async function chatWithMaterial(
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: getChatSystemPrompt(content, contextLimit) },
+                { role: "system", content: getChatSystemPrompt(content, contextLimit, language) },
                 ...messages.map((m) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content,
@@ -273,19 +326,20 @@ export async function chatWithMaterialStream(
     maxTokens?: number,
     maxContext?: number,
     onChunk?: (chunk: string) => void,
-    customConfig?: CustomAPIConfig
+    customConfig?: CustomAPIConfig,
+    language: Language = "id"
 ): Promise<string> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
         const useModel = customConfig?.customModel || model || aiModel;
         const contextLimit = maxContext || 6000;
 
-        console.log(`🤖 Streaming with model: ${useModel}${customConfig?.customApiUrl ? ' (Custom API)' : ''}, context: ${contextLimit}`);
+        console.log(`🤖 Streaming with model: ${useModel}${customConfig?.customApiUrl ? ' (Custom API)' : ''}, context: ${contextLimit}, lang: ${language}`);
 
         const stream = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: getChatSystemPrompt(content, contextLimit) },
+                { role: "system", content: getChatSystemPrompt(content, contextLimit, language) },
                 ...messages.map((m) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content,

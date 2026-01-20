@@ -99,6 +99,7 @@ model Material {
   quizAttempts        QuizAttempt[]
   summary             String?              @db.Text // AI-generated summary
   glossary            String?              @db.Text // AI-generated glossary (JSON)
+  flashcards          String?              @db.Text // AI-generated flashcards (JSON)
   learningEvaluations LearningEvaluation[]
 
   @@map("materials")
