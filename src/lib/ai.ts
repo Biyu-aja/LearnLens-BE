@@ -18,22 +18,30 @@ const defaultModel = process.env.AI_MODEL || "gemini-2.5-flash-lite";
 
 // Available models with their info (from HaluAI Gateway)
 export const AI_MODELS = [
-    // Flash tier
-    { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite", tier: "flash", price: "Rp 2.500/1M tokens" },
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: "flash", price: "Rp 2.500/1M tokens" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash", tier: "flash", price: "Rp 2.500/1M tokens" },
-    // Standard tier
-    { id: "gemini-3-pro-low", name: "Gemini 3 Pro Low", tier: "standard", price: "Rp 25.000/1M tokens" },
-    { id: "claude-sonnet-4-5", name: "Claude 4.5 Sonnet", tier: "standard", price: "Rp 25.000/1M tokens" },
-    // Pro tier
-    { id: "gemini-3-pro-high", name: "Gemini 3 Pro High", tier: "pro", price: "Rp 37.500/1M tokens" },
-    { id: "gemini-3-pro-image", name: "Gemini 3 Pro (Image)", tier: "pro", price: "Rp 37.500/1M tokens" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "pro", price: "Rp 37.500/1M tokens" },
-    // Thinking tier
-    { id: "gemini-2.5-flash-thinking", name: "Gemini 2.5 Flash (Thinking)", tier: "thinking", price: "Rp 50.000/1M tokens" },
-    { id: "claude-sonnet-4-5-thinking", name: "Claude 4.5 Sonnet (Thinking)", tier: "thinking", price: "Rp 50.000/1M tokens" },
-    // Premium tier
-    { id: "claude-opus-4-5-thinking", name: "Claude 4.5 Opus (Thinking)", tier: "premium", price: "Rp 62.500/1M tokens" },
+    {
+        id: "gemini-2.5-flash-lite",
+        name: "Gemini 2.5 Flash Lite",
+        price: "Rp 2.500/1M tokens",
+        description: "Model paling ringan dan cepat. Cocok untuk tugas sederhana.",
+        pros: ["Tercepat", "Termurah", "Response instan"],
+        cons: ["Kurang akurat untuk tugas kompleks", "Context window lebih kecil"]
+    },
+    {
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
+        price: "Rp 2.500/1M tokens",
+        description: "Keseimbangan antara kecepatan dan kualitas. Rekomendasi untuk sebagian besar penggunaan.",
+        pros: ["Cepat", "Akurat", "Context window besar (1M tokens)"],
+        cons: ["Sedikit lebih lambat dari Lite"]
+    },
+    {
+        id: "gemini-3-flash",
+        name: "Gemini 3 Flash",
+        price: "Rp 2.500/1M tokens",
+        description: "Model terbaru dengan kemampuan reasoning lebih baik.",
+        pros: ["Model terbaru", "Reasoning terbaik", "Multimodal"],
+        cons: ["Masih dalam development", "Bisa lebih lambat"]
+    },
 ];
 
 // Log configuration status
@@ -57,7 +65,7 @@ export interface CustomAPIConfig {
 }
 
 // Get AI client - uses custom API if configured, otherwise default
-function getAIClient(customConfig?: CustomAPIConfig): { client: OpenAI; model: string } {
+export function getAIClient(customConfig?: CustomAPIConfig): { client: OpenAI; model: string } {
     // If custom API is configured, create a new client
     if (customConfig?.customApiUrl && customConfig?.customApiKey) {
         console.log(`🔧 Using custom API: ${customConfig.customApiUrl}`);
@@ -227,16 +235,18 @@ export async function chatWithMaterial(
     messages: { role: "user" | "assistant"; content: string }[],
     model?: string,
     maxTokens?: number,
+    maxContext?: number,
     customConfig?: CustomAPIConfig
 ): Promise<string> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
         const useModel = customConfig?.customModel || model || aiModel;
+        const contextLimit = maxContext || 6000;
 
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: getChatSystemPrompt(content) },
+                { role: "system", content: getChatSystemPrompt(content, contextLimit) },
                 ...messages.map((m) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content,
@@ -261,19 +271,21 @@ export async function chatWithMaterialStream(
     messages: { role: "user" | "assistant"; content: string }[],
     model?: string,
     maxTokens?: number,
+    maxContext?: number,
     onChunk?: (chunk: string) => void,
     customConfig?: CustomAPIConfig
 ): Promise<string> {
     try {
         const { client, model: aiModel } = getAIClient(customConfig);
         const useModel = customConfig?.customModel || model || aiModel;
+        const contextLimit = maxContext || 6000;
 
-        console.log(`🤖 Streaming with model: ${useModel}${customConfig?.customApiUrl ? ' (Custom API)' : ''}`);
+        console.log(`🤖 Streaming with model: ${useModel}${customConfig?.customApiUrl ? ' (Custom API)' : ''}, context: ${contextLimit}`);
 
         const stream = await client.chat.completions.create({
             model: useModel,
             messages: [
-                { role: "system", content: getChatSystemPrompt(content) },
+                { role: "system", content: getChatSystemPrompt(content, contextLimit) },
                 ...messages.map((m) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content,

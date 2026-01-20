@@ -375,4 +375,82 @@ ${material.content.slice(0, 3000)}`,
     }
 });
 
+// POST /api/ai/:materialId/cleanup - Clean up content by removing unnecessary parts
+router.post("/:materialId/cleanup", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { content } = req.body;
+
+        if (!content || typeof content !== "string") {
+            res.status(400).json({ error: "Content is required" });
+            return;
+        }
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        const originalLength = content.length;
+
+        // Use AI to identify and clean up unnecessary parts
+        const { default: ai } = await import("../lib/ai");
+        const defaultModel = "gemini-2.5-flash-lite";
+
+        const response = await ai.chat.completions.create({
+            model: defaultModel,
+            messages: [
+                {
+                    role: "system",
+                    content: `Kamu adalah asisten yang membantu membersihkan konten dokumen.
+
+TUGAS: Hapus bagian-bagian yang TIDAK PENTING dari konten berikut:
+- Daftar Isi (Table of Contents)
+- Daftar Gambar (List of Figures)
+- Daftar Tabel (List of Tables) 
+- Halaman kosong atau placeholder
+- Header/footer berulang
+- Nomor halaman
+- Catatan kaki yang tidak relevan
+- Daftar Pustaka/Referensi (kecuali sangat singkat)
+- Indeks
+- Ucapan terima kasih (Acknowledgments)
+- Cover/sampul
+
+PENTING:
+1. JANGAN hapus konten pembelajaran yang substantif
+2. Pertahankan semua penjelasan, definisi, konsep, contoh
+3. Kembalikan konten yang sudah dibersihkan TANPA tambahan apapun
+4. Jangan tambahkan teks pembuka atau penutup
+5. Output HANYA konten yang sudah dibersihkan`
+                },
+                {
+                    role: "user",
+                    content: `Bersihkan konten berikut:\n\n${content.slice(0, 50000)}`
+                }
+            ],
+            max_tokens: 16000,
+        });
+
+        const cleanedContent = response.choices[0]?.message?.content || content;
+        const removedChars = originalLength - cleanedContent.length;
+
+        res.json({
+            success: true,
+            cleanedContent,
+            removedChars: Math.max(0, removedChars)
+        });
+    } catch (error) {
+        console.error("Error cleaning up content:", error);
+        res.status(500).json({ error: "Failed to clean up content" });
+    }
+});
+
 export default router;
+

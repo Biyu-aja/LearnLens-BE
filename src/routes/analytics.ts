@@ -121,12 +121,18 @@ router.get("/material/:materialId", authMiddleware, async (req: Request, res: Re
             return res.status(404).json({ error: "Material not found" });
         }
 
-        // Get study sessions for this material
-        const studySessions = await prisma.studySession.findMany({
-            where: { materialId, userId },
+        // Get chat messages for this material (count user questions)
+        const messages = await prisma.message.findMany({
+            where: { materialId },
             orderBy: { createdAt: "desc" },
-            take: 10 // Last 10 sessions
+            take: 20
         });
+
+        const userMessages = messages.filter(m => m.role === "user");
+        const totalQuestions = userMessages.length;
+
+        // Get last activity
+        const lastActivity = messages.length > 0 ? messages[0].createdAt : null;
 
         // Get quiz attempts for this material
         const quizAttempts = await prisma.quizAttempt.findMany({
@@ -134,10 +140,6 @@ router.get("/material/:materialId", authMiddleware, async (req: Request, res: Re
             orderBy: { createdAt: "desc" },
             take: 10 // Last 10 attempts
         });
-
-        // Calculate totals
-        const totalStudyTime = studySessions.reduce((sum, s) => sum + (s.duration || 0), 0);
-        const totalSessions = studySessions.length;
 
         const totalAttempts = quizAttempts.length;
         const averageScore = totalAttempts > 0
@@ -150,10 +152,10 @@ router.get("/material/:materialId", authMiddleware, async (req: Request, res: Re
         res.json({
             success: true,
             analytics: {
-                studyTime: {
-                    total: totalStudyTime, // in seconds
-                    sessions: totalSessions,
-                    recentSessions: studySessions
+                chatActivity: {
+                    totalQuestions,
+                    lastActivity,
+                    recentMessages: messages.slice(0, 5)
                 },
                 quizPerformance: {
                     totalAttempts,
@@ -169,4 +171,172 @@ router.get("/material/:materialId", authMiddleware, async (req: Request, res: Re
     }
 });
 
+// AI Evaluate learning from chat history
+router.post("/evaluate/:materialId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const { materialId } = req.params;
+        const userId = req.user!.id;
+
+        // Verify material belongs to user
+        const material = await prisma.material.findFirst({
+            where: { id: materialId, userId }
+        });
+
+        if (!material) {
+            return res.status(404).json({ error: "Material not found" });
+        }
+
+        // Get all chat messages for this material
+        const messages = await prisma.message.findMany({
+            where: { materialId },
+            orderBy: { createdAt: "asc" }
+        });
+
+        const userMessages = messages.filter(m => m.role === "user");
+
+        if (userMessages.length < 1) {
+            return res.status(400).json({
+                error: "Belum cukup percakapan untuk dievaluasi. Tanyakan beberapa pertanyaan terlebih dahulu!"
+            });
+        }
+
+        // Get quiz attempts for context
+        const quizAttempts = await prisma.quizAttempt.findMany({
+            where: { materialId, userId },
+            orderBy: { createdAt: "desc" },
+            take: 5
+        });
+
+        // Get previous evaluation for comparison
+        const previousEval = await prisma.learningEvaluation.findFirst({
+            where: { materialId, userId },
+            orderBy: { createdAt: "desc" }
+        });
+
+        // Build chat history for AI
+        const chatHistory = messages.map(m => `${m.role === "user" ? "Siswa" : "AI"}: ${m.content}`).join("\n\n");
+
+        const quizContext = quizAttempts.length > 0
+            ? `\n\nHasil Quiz:\n${quizAttempts.map(q => `- Score: ${q.score}/${q.totalQuestions} (${q.percentage}%)`).join("\n")}`
+            : "";
+
+        const previousContext = previousEval
+            ? `\n\nEvaluasi sebelumnya (skor: ${previousEval.score}/10, ${previousEval.questionsCount} pertanyaan):\n${previousEval.content.substring(0, 500)}...`
+            : "";
+
+        // Calculate quiz avg score
+        const quizAvgScore = quizAttempts.length > 0
+            ? quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / quizAttempts.length
+            : null;
+
+        // Use OpenAI to evaluate
+        const { getAIClient } = await import("../lib/ai");
+        const { client, model } = getAIClient();
+
+        const response = await client.chat.completions.create({
+            model,
+            messages: [
+                {
+                    role: "system",
+                    content: `Kamu adalah tutor AI yang mengevaluasi progress belajar siswa.
+
+Berdasarkan riwayat percakapan antara Siswa dan AI, berikan evaluasi dalam format berikut:
+
+## 📊 Ringkasan Pembelajaran
+[Ringkas topik-topik yang sudah dipelajari]
+
+## ✅ Kekuatan
+[3-5 poin tentang apa yang sudah dipahami dengan baik]
+
+## 🎯 Area untuk Ditingkatkan
+[3-5 poin tentang area yang perlu lebih banyak dipelajari]
+
+## 💡 Rekomendasi
+[3-5 saran konkret untuk langkah selanjutnya]
+
+${previousEval ? `## 📈 Perubahan dari Evaluasi Sebelumnya
+[Bandingkan dengan evaluasi sebelumnya dan sebutkan progress/perubahan]
+
+` : ""}## 🌟 Skor Pemahaman: X/10
+[Berikan skor 1-10 dengan penjelasan singkat. PENTING: Tulis dalam format "Skor Pemahaman: X/10"]
+
+Berikan feedback yang memotivasi dan konstruktif dalam Bahasa Indonesia.`
+                },
+                {
+                    role: "user",
+                    content: `Materi: ${material.title}\n\nRiwayat Percakapan:\n${chatHistory}${quizContext}${previousContext}`
+                }
+            ],
+            max_tokens: 1500
+        });
+
+        const evaluationContent = response.choices[0]?.message?.content || "Gagal membuat evaluasi";
+
+        // Extract score from evaluation (look for "X/10" pattern)
+        const scoreMatch = evaluationContent.match(/(\d+)\/10/);
+        const score = scoreMatch ? parseInt(scoreMatch[1]) : 5;
+
+        // Save evaluation to database
+        const evaluation = await prisma.learningEvaluation.create({
+            data: {
+                content: evaluationContent,
+                score,
+                questionsCount: userMessages.length,
+                quizAvgScore,
+                materialId,
+                userId
+            }
+        });
+
+        res.json({
+            success: true,
+            evaluation: {
+                id: evaluation.id,
+                content: evaluation.content,
+                score: evaluation.score,
+                questionsCount: evaluation.questionsCount,
+                quizAvgScore: evaluation.quizAvgScore,
+                createdAt: evaluation.createdAt
+            }
+        });
+    } catch (error) {
+        console.error("Evaluate learning error:", error);
+        res.status(500).json({ error: "Failed to evaluate learning" });
+    }
+});
+
+// Get evaluation history for a material
+router.get("/evaluations/:materialId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const { materialId } = req.params;
+        const userId = req.user!.id;
+
+        // Verify material belongs to user
+        const material = await prisma.material.findFirst({
+            where: { id: materialId, userId }
+        });
+
+        if (!material) {
+            return res.status(404).json({ error: "Material not found" });
+        }
+
+        // Get all evaluations
+        const evaluations = await prisma.learningEvaluation.findMany({
+            where: { materialId, userId },
+            orderBy: { createdAt: "desc" },
+            take: 10
+        });
+
+        res.json({
+            success: true,
+            evaluations
+        });
+    } catch (error) {
+        console.error("Get evaluations error:", error);
+        res.status(500).json({ error: "Failed to get evaluations" });
+    }
+});
+
 export default router;
+
+

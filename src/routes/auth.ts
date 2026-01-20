@@ -190,6 +190,131 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
     }
 });
 
+// PUT /api/auth/change-password - Change user password
+router.put("/change-password", authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ error: "Not authenticated" });
+            return;
+        }
+
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            res.status(400).json({ error: "Current password and new password are required" });
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            res.status(400).json({ error: "New password must be at least 6 characters" });
+            return;
+        }
+
+        // Get user with password
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.id },
+        });
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        // Verify current password
+        const validPassword = await bcrypt.compare(currentPassword, user.password);
+        if (!validPassword) {
+            res.status(401).json({ error: "Current password is incorrect" });
+            return;
+        }
+
+        // Hash and update new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { password: hashedPassword },
+        });
+
+        res.json({
+            success: true,
+            message: "Password changed successfully",
+        });
+    } catch (error) {
+        console.error("Change password error:", error);
+        res.status(500).json({ error: "Failed to change password" });
+    }
+});
+
+// POST /api/auth/test-api - Test custom API connection
+router.post("/test-api", authMiddleware, async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ error: "Not authenticated" });
+            return;
+        }
+
+        const { apiUrl, apiKey, model } = req.body;
+
+        if (!apiUrl || !model) {
+            res.status(400).json({ error: "API URL and Model are required" });
+            return;
+        }
+
+        // Use provided API key or fallback to saved one
+        let keyToUse = apiKey;
+        if (!keyToUse) {
+            const user = await prisma.user.findUnique({
+                where: { id: req.user.id },
+            });
+            keyToUse = user?.customApiKey;
+        }
+
+        if (!keyToUse) {
+            res.status(400).json({ error: "API Key is required" });
+            return;
+        }
+
+        // Test the connection by making a simple request
+        const testUrl = apiUrl.endsWith('/') ? apiUrl : apiUrl + '/';
+        const response = await fetch(`${testUrl}chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${keyToUse}`,
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: 'Hello, this is a connection test. Please respond with "OK".' }],
+                max_tokens: 10,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            res.status(response.status).json({
+                error: errorData.error?.message || errorData.error || `API returned status ${response.status}`,
+                success: false
+            });
+            return;
+        }
+
+        const data = await response.json();
+        const responseContent = data.choices?.[0]?.message?.content || 'Response received';
+
+        res.json({
+            success: true,
+            message: "Connection successful!",
+            model: data.model || model,
+            response: responseContent.substring(0, 100),
+        });
+    } catch (error: any) {
+        console.error("Test API error:", error);
+        res.status(500).json({
+            error: error.message || "Failed to connect to API",
+            success: false
+        });
+    }
+});
+
 // GET /api/auth/models - Get available AI models
 router.get("/models", async (_req: Request, res: Response): Promise<void> => {
     res.json({

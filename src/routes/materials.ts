@@ -5,6 +5,8 @@ import { authMiddleware } from "../middleware/auth";
 import { generateSummary } from "../lib/ai";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParseLib = require("pdf-parse");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const mammoth = require("mammoth");
 
 const router = Router();
 
@@ -28,15 +30,33 @@ const parsePdf = async (buffer: Buffer) => {
     return parser(buffer);
 };
 
+// Helper to parse Word documents (.docx)
+const parseWord = async (buffer: Buffer): Promise<string> => {
+    console.log("Parsing Word document with mammoth...");
+    const result = await mammoth.extractRawText({ buffer });
+    console.log("Word parsed successfully, content length:", result.value.length);
+    return result.value;
+};
+
 // Configure multer for file uploads (memory storage)
+// Supported file types
+const ALLOWED_MIMETYPES = [
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    // Word documents
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+    "application/msword", // .doc (legacy, limited support)
+];
+
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
-        if (file.mimetype === "application/pdf" || file.mimetype === "text/plain") {
+        if (ALLOWED_MIMETYPES.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error("Only PDF and text files are allowed"));
+            cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: PDF, Word (.docx), Text, Markdown`));
         }
     },
 });
@@ -119,16 +139,29 @@ router.post(
             console.log("Processing upload...");
             if (req.file) {
                 console.log("File received:", req.file.originalname, req.file.mimetype, req.file.size);
-                // Handle file upload
-                if (req.file.mimetype === "application/pdf") {
+                // Handle file upload based on mimetype
+                const mimetype = req.file.mimetype;
+
+                if (mimetype === "application/pdf") {
+                    // PDF file
                     console.log("Parsing PDF...");
                     const pdfData = await parsePdf(req.file.buffer);
                     content = pdfData.text;
                     type = "pdf";
                     console.log("PDF parsed, content length:", content.length);
+                } else if (
+                    mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                    mimetype === "application/msword"
+                ) {
+                    // Word document
+                    console.log("Parsing Word document...");
+                    content = await parseWord(req.file.buffer);
+                    type = "docx";
+                    console.log("Word parsed, content length:", content.length);
                 } else {
+                    // Plain text / markdown
                     content = req.file.buffer.toString("utf-8");
-                    type = "text";
+                    type = mimetype === "text/markdown" ? "markdown" : "text";
                     console.log("Text file read, content length:", content.length);
                 }
             } else if (req.body.content) {
@@ -264,12 +297,72 @@ router.post(
                 return;
             }
 
+            const smartCleanup = req.body.smartCleanup === "true";
+
             let content = "";
-            if (req.file.mimetype === "application/pdf") {
+            const mimetype = req.file.mimetype;
+
+            if (mimetype === "application/pdf") {
                 const pdfData = await parsePdf(req.file.buffer);
                 content = pdfData.text;
+            } else if (
+                mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                mimetype === "application/msword"
+            ) {
+                content = await parseWord(req.file.buffer);
             } else {
                 content = req.file.buffer.toString("utf-8");
+            }
+
+            // If smart cleanup is enabled, use AI to clean the content
+            if (smartCleanup && content.length > 100) {
+                try {
+                    const { default: ai } = await import("../lib/ai");
+                    const defaultModel = "gemini-2.5-flash-lite";
+
+                    const response = await ai.chat.completions.create({
+                        model: defaultModel,
+                        messages: [
+                            {
+                                role: "system",
+                                content: `Kamu adalah asisten yang membersihkan konten dokumen akademik/pembelajaran.
+
+TUGAS: Hapus bagian-bagian yang TIDAK PENTING:
+- Daftar Isi (Table of Contents)
+- Daftar Gambar/Tabel
+- Halaman kosong atau teks "This page intentionally left blank"
+- Header/footer berulang (seperti nama universitas berulang)
+- Nomor halaman standalone
+- Catatan kaki yang hanya berisi referensi
+- Cover/sampul/title page
+- Ucapan terima kasih
+- Indeks di akhir dokumen
+- Watermark atau teks repeated
+
+PENTING:
+1. PERTAHANKAN semua konten pembelajaran substantif
+2. Pertahankan semua penjelasan, definisi, rumus, contoh, soal
+3. Pertahankan judul bab dan sub-bab
+4. Output HANYA konten yang sudah dibersihkan, tanpa komentar tambahan`
+                            },
+                            {
+                                role: "user",
+                                content: `Bersihkan dokumen ini:\n\n${content.slice(0, 50000)}`
+                            }
+                        ],
+                        max_tokens: 16000,
+                    });
+
+                    const cleanedContent = response.choices[0]?.message?.content;
+                    if (cleanedContent && cleanedContent.length > 50) {
+                        const originalLength = content.length;
+                        content = cleanedContent;
+                        console.log(`Smart cleanup: ${originalLength} -> ${content.length} chars (removed ${originalLength - content.length})`);
+                    }
+                } catch (cleanupError) {
+                    console.error("Smart cleanup failed, using original content:", cleanupError);
+                    // Continue with original content if cleanup fails
+                }
             }
 
             res.json({ success: true, content });
@@ -279,6 +372,7 @@ router.post(
         }
     }
 );
+
 
 // DELETE /api/materials/:id/summary - Delete summary for a material
 router.delete("/:id/summary", async (req: Request, res: Response): Promise<void> => {
@@ -397,4 +491,98 @@ router.delete("/:id/messages/:messageId", async (req: Request, res: Response): P
     }
 });
 
+// POST /api/materials/:id/append-file - Append PDF content to existing material
+router.post(
+    "/:id/append-file",
+    upload.single("file"),
+    async (req: Request, res: Response): Promise<void> => {
+        try {
+            const material = await prisma.material.findFirst({
+                where: {
+                    id: req.params.id,
+                    userId: req.user!.id,
+                },
+            });
+
+            if (!material) {
+                res.status(404).json({ error: "Material not found" });
+                return;
+            }
+
+            if (!req.file) {
+                res.status(400).json({ error: "No file provided" });
+                return;
+            }
+
+            let newContent = "";
+            const mimetype = req.file.mimetype;
+
+            if (mimetype === "application/pdf") {
+                const pdfData = await parsePdf(req.file.buffer);
+                newContent = pdfData.text;
+            } else if (
+                mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                mimetype === "application/msword"
+            ) {
+                newContent = await parseWord(req.file.buffer);
+            } else {
+                newContent = req.file.buffer.toString("utf-8");
+            }
+
+            // Append content with separator
+            const separator = "\n\n---\n\n[Tambahan Konten]\n\n";
+            const updatedContent = material.content + separator + newContent;
+
+            const updatedMaterial = await prisma.material.update({
+                where: { id: material.id },
+                data: { content: updatedContent },
+            });
+
+            res.json({ success: true, material: updatedMaterial });
+        } catch (error) {
+            console.error("Error appending file:", error);
+            res.status(500).json({ error: "Failed to append file" });
+        }
+    }
+);
+
+// POST /api/materials/:id/append-text - Append text content to existing material
+router.post("/:id/append-text", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { text } = req.body;
+
+        if (!text || typeof text !== "string") {
+            res.status(400).json({ error: "No text provided" });
+            return;
+        }
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Append text with separator
+        const separator = "\n\n---\n\n[Tambahan Catatan]\n\n";
+        const updatedContent = material.content + separator + text;
+
+        const updatedMaterial = await prisma.material.update({
+            where: { id: material.id },
+            data: { content: updatedContent },
+        });
+
+        res.json({ success: true, material: updatedMaterial });
+    } catch (error) {
+        console.error("Error appending text:", error);
+        res.status(500).json({ error: "Failed to append text" });
+    }
+});
+
 export default router;
+

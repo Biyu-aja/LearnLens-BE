@@ -94,6 +94,7 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
             chatHistory,
             req.user!.preferredModel,
             req.user!.maxTokens,
+            req.user!.maxContext,
             customConfig
         );
 
@@ -188,6 +189,7 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
                 chatHistory,
                 req.user!.preferredModel,
                 req.user!.maxTokens,
+                req.user!.maxContext,
                 (chunk: string) => {
                     fullContent += chunk;
                     res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);

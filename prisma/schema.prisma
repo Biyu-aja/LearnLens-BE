@@ -93,12 +93,13 @@ model Material {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Relations
-  messages      Message[]
-  quizzes       Quiz[]
-  studySessions StudySession[]
-  quizAttempts  QuizAttempt[]
-  summary       String?        @db.Text // AI-generated summary
-  glossary      String?        @db.Text // AI-generated glossary (JSON)
+  messages            Message[]
+  quizzes             Quiz[]
+  studySessions       StudySession[]
+  quizAttempts        QuizAttempt[]
+  summary             String?              @db.Text // AI-generated summary
+  glossary            String?              @db.Text // AI-generated glossary (JSON)
+  learningEvaluations LearningEvaluation[]
 
   @@map("materials")
 }
@@ -171,4 +172,24 @@ model QuizAttempt {
   createdAt DateTime @default(now())
 
   @@map("quiz_attempts")
+}
+
+// Learning Evaluation - AI-generated learning progress evaluation
+model LearningEvaluation {
+  id             String @id @default(cuid())
+  content        String @db.Text // AI evaluation content
+  score          Int // Understanding score 1-10
+  questionsCount Int // Number of questions at time of evaluation
+  quizAvgScore   Float? // Quiz average score at time of evaluation
+
+  // Which material
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  // Who was evaluated
+  userId String
+
+  createdAt DateTime @default(now())
+
+  @@map("learning_evaluations")
 }

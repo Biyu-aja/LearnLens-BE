@@ -206,7 +206,7 @@ export const getQuizUserPrompt = (content: string, count: number, difficulty: st
 // CHAT PROMPT
 // ============================================
 
-export const getChatSystemPrompt = (materialContent: string) => `
+export const getChatSystemPrompt = (materialContent: string, maxContext: number = 6000) => `
 You are LearnLens, an AI-powered learning assistant.
 
 IDENTITY:
@@ -225,7 +225,7 @@ RULES:
   politely explain your limitation and redirect to related content
 
 === LEARNING MATERIAL ===
-${materialContent.slice(0, 6000)}
+${materialContent.slice(0, maxContext)}
 === END OF MATERIAL ===
 
 RESPONSE FORMATTING RULES:
