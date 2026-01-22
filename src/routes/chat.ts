@@ -88,13 +88,17 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
             customModel: req.user!.customModel,
         } : undefined;
 
+        // Use custom settings if custom API is configured, otherwise use default settings
+        const maxTokens = customConfig ? (req.user!.customMaxTokens || 1000) : req.user!.maxTokens;
+        const maxContext = customConfig ? (req.user!.customMaxContext || 8000) : req.user!.maxContext;
+
         // Get AI response using user's preferred model (or custom API)
         const aiResponse = await chatWithMaterial(
             material.content,
             chatHistory,
             req.user!.preferredModel,
-            req.user!.maxTokens,
-            req.user!.maxContext,
+            maxTokens,
+            maxContext,
             customConfig,
             language as "id" | "en"
         );
@@ -183,14 +187,18 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
             customModel: req.user!.customModel,
         } : undefined;
 
+        // Use custom settings if custom API is configured, otherwise use default settings
+        const maxTokens = customConfig ? (req.user!.customMaxTokens || 1000) : req.user!.maxTokens;
+        const maxContext = customConfig ? (req.user!.customMaxContext || 8000) : req.user!.maxContext;
+
         try {
             // Stream AI response with language support
             await chatWithMaterialStream(
                 material.content,
                 chatHistory,
                 req.user!.preferredModel,
-                req.user!.maxTokens,
-                req.user!.maxContext,
+                maxTokens,
+                maxContext,
                 (chunk: string) => {
                     fullContent += chunk;
                     res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);

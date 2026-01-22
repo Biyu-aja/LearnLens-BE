@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN     "customMaxContext" INTEGER NOT NULL DEFAULT 8000,
+ADD COLUMN     "customMaxTokens" INTEGER NOT NULL DEFAULT 1000;

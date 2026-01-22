@@ -59,6 +59,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
                 preferredModel: user.preferredModel,
                 maxTokens: user.maxTokens,
                 maxContext: user.maxContext,
+                customMaxTokens: user.customMaxTokens,
+                customMaxContext: user.customMaxContext,
             },
             token,
         });
@@ -107,6 +109,8 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
                 maxContext: user.maxContext,
                 customApiUrl: user.customApiUrl,
                 customModel: (user as any).customModel,
+                customMaxTokens: user.customMaxTokens,
+                customMaxContext: user.customMaxContext,
                 hasCustomApiKey: !!user.customApiKey,
             },
             token,
@@ -142,7 +146,7 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
             return;
         }
 
-        const { name, preferredModel, maxTokens, maxContext, customApiUrl, customApiKey, customModel } = req.body;
+        const { name, preferredModel, maxTokens, maxContext, customApiUrl, customApiKey, customModel, customMaxTokens, customMaxContext } = req.body;
 
         // Validate model if provided (skip validation if using custom API)
         if (preferredModel && !customApiUrl) {
@@ -162,6 +166,8 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
         if (customApiUrl !== undefined) updateData.customApiUrl = customApiUrl || null;
         if (customApiKey !== undefined) updateData.customApiKey = customApiKey || null;
         if (customModel !== undefined) updateData.customModel = customModel || null;
+        if (customMaxTokens !== undefined) updateData.customMaxTokens = Number(customMaxTokens);
+        if (customMaxContext !== undefined) updateData.customMaxContext = Number(customMaxContext);
 
         const updatedUser = await prisma.user.update({
             where: { id: req.user.id },
@@ -180,6 +186,8 @@ router.put("/settings", authMiddleware, async (req: Request, res: Response): Pro
                 maxContext: updatedUser.maxContext,
                 customApiUrl: updatedUser.customApiUrl,
                 customModel: (updatedUser as any).customModel,
+                customMaxTokens: updatedUser.customMaxTokens,
+                customMaxContext: updatedUser.customMaxContext,
                 // Don't expose full API key, just indicate if it's set
                 hasCustomApiKey: !!updatedUser.customApiKey,
             },

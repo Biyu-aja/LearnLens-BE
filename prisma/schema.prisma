@@ -11,20 +11,22 @@ datasource db {
 
 // User model with password auth
 model User {
-  id             String    @id @default(cuid())
-  name           String?
-  email          String    @unique
-  password       String // Hashed password
-  preferredModel String    @default("gemini-2.5-flash-lite") // AI model preference
-  maxTokens      Int       @default(1000) // Max tokens for generation
-  maxContext     Int       @default(8000) // Max characters of content sent to AI
-  customApiUrl   String? // Custom API URL (optional)
-  customApiKey   String? // Custom API key (optional, encrypted)
-  customModel    String? // Custom model name for custom API (e.g., "gpt-4o", "claude-3-opus")
-  emailVerified  DateTime?
-  image          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  name             String?
+  email            String    @unique
+  password         String // Hashed password
+  preferredModel   String    @default("gemini-2.5-flash-lite") // AI model preference
+  maxTokens        Int       @default(1000) // Max tokens for generation
+  maxContext       Int       @default(1000000) // Max characters of content sent to AI (1M for HaluAI Gateway)
+  customApiUrl     String? // Custom API URL (optional)
+  customApiKey     String? // Custom API key (optional, encrypted)
+  customModel      String? // Custom model name for custom API (e.g., "gpt-4o", "claude-3-opus")
+  customMaxTokens  Int       @default(1000) // Max tokens for custom API
+  customMaxContext Int       @default(8000) // Max context for custom API
+  emailVerified    DateTime?
+  image            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Relations
   accounts      Account[]
@@ -32,6 +34,7 @@ model User {
   materials     Material[]
   studySessions StudySession[]
   quizAttempts  QuizAttempt[]
+  chatSessions  ChatSession[]
 
   @@map("users")
 }
@@ -81,12 +84,13 @@ model VerificationToken {
 
 // Learning Material - uploaded by user
 model Material {
-  id        String   @id @default(cuid())
-  title     String
-  content   String   @db.Text // Extracted text from PDF or raw text
-  type      String // "pdf" or "text"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  title       String
+  content     String?  @db.Text // Extracted text from PDF or raw text (optional for research mode)
+  description String?  @db.Text // Initial question/description for research mode
+  type        String // "pdf", "text", or "research"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Owner
   userId String
@@ -97,10 +101,11 @@ model Material {
   quizzes             Quiz[]
   studySessions       StudySession[]
   quizAttempts        QuizAttempt[]
-  summary             String?              @db.Text // AI-generated summary
-  glossary            String?              @db.Text // AI-generated glossary (JSON)
-  flashcards          String?              @db.Text // AI-generated flashcards (JSON)
+  summary             String?               @db.Text // AI-generated summary
+  glossary            String?               @db.Text // AI-generated glossary (JSON)
+  flashcards          String?               @db.Text // AI-generated flashcards (JSON)
   learningEvaluations LearningEvaluation[]
+  chatSessions        ChatSessionMaterial[]
 
   @@map("materials")
 }
@@ -193,4 +198,47 @@ model LearningEvaluation {
   createdAt DateTime @default(now())
 
   @@map("learning_evaluations")
+}
+
+// Chat Session - multi-material chat sessions
+model ChatSession {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Owner
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  materials ChatSessionMaterial[]
+  messages  ChatSessionMessage[]
+
+  @@map("chat_sessions")
+}
+
+// Junction table for ChatSession and Material (many-to-many)
+model ChatSessionMaterial {
+  id            String      @id @default(cuid())
+  chatSessionId String
+  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  materialId    String
+  material      Material    @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([chatSessionId, materialId])
+  @@map("chat_session_materials")
+}
+
+// Chat Session Message - conversation history for multi-material chat
+model ChatSessionMessage {
+  id            String      @id @default(cuid())
+  role          String // "user" or "assistant"
+  content       String      @db.Text
+  createdAt     DateTime    @default(now())
+  chatSessionId String
+  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@map("chat_session_messages")
 }

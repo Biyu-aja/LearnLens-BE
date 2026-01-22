@@ -132,46 +132,56 @@ router.post(
             }
             console.log("User found:", req.user.id);
 
-            let content: string;
-            let type: string;
             const title = req.body.title || "Untitled Material";
+            const description = req.body.description;
+            const requestedType = req.body.type; // "research", "text", "pdf", etc.
 
-            console.log("Processing upload...");
-            if (req.file) {
+            let content: string | null = null;
+            let type: string;
+
+            console.log("Processing upload...", { requestedType, hasFile: !!req.file, hasContent: !!req.body.content, hasDescription: !!description });
+
+            // Research mode - no content needed, just description
+            if (requestedType === "research") {
+                type = "research";
+                content = null; // Research mode doesn't have content initially
+                console.log("Research mode material");
+            }
+            // File upload mode
+            else if (req.file) {
                 console.log("File received:", req.file.originalname, req.file.mimetype, req.file.size);
-                // Handle file upload based on mimetype
                 const mimetype = req.file.mimetype;
 
                 if (mimetype === "application/pdf") {
-                    // PDF file
                     console.log("Parsing PDF...");
                     const pdfData = await parsePdf(req.file.buffer);
                     content = pdfData.text;
-                    type = "pdf";
+                    type = requestedType || "pdf";
                     console.log("PDF parsed, content length:", content.length);
                 } else if (
                     mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
                     mimetype === "application/msword"
                 ) {
-                    // Word document
                     console.log("Parsing Word document...");
                     content = await parseWord(req.file.buffer);
-                    type = "docx";
+                    type = requestedType || "docx";
                     console.log("Word parsed, content length:", content.length);
                 } else {
-                    // Plain text / markdown
                     content = req.file.buffer.toString("utf-8");
-                    type = mimetype === "text/markdown" ? "markdown" : "text";
+                    type = mimetype === "text/markdown" ? "markdown" : (requestedType || "text");
                     console.log("Text file read, content length:", content.length);
                 }
-            } else if (req.body.content) {
+            }
+            // Text content mode
+            else if (req.body.content) {
                 console.log("Raw content received");
-                // Handle raw text input
                 content = req.body.content;
-                type = "text";
-            } else {
-                console.error("No file or content provided");
-                res.status(400).json({ error: "No file or content provided" });
+                type = requestedType || "text";
+            }
+            // No file, no content, no research mode
+            else {
+                console.error("No file, content, or research mode specified");
+                res.status(400).json({ error: "No file, content, or research mode provided" });
                 return;
             }
 
@@ -181,6 +191,7 @@ router.post(
                 data: {
                     title,
                     content,
+                    description,
                     type,
                     userId: req.user!.id,
                 },
