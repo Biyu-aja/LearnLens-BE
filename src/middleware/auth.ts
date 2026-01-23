@@ -61,12 +61,12 @@ export async function authMiddleware(
             image: user.image || undefined,
             preferredModel: user.preferredModel || "gemini-2.5-flash-lite",
             maxTokens: user.maxTokens || 1000,
-            maxContext: (user as any).maxContext || 1000000,
-            customApiUrl: (user as any).customApiUrl || undefined,
-            customApiKey: (user as any).customApiKey || undefined,
-            customModel: (user as any).customModel || undefined,
-            customMaxTokens: user.customMaxTokens || undefined,
-            customMaxContext: user.customMaxContext || undefined,
+            maxContext: (user as any).maxContext || 500000,
+            customApiUrl: (user as any).customApiUrl ?? undefined,
+            customApiKey: (user as any).customApiKey ?? undefined,
+            customModel: (user as any).customModel ?? undefined,
+            customMaxTokens: user.customMaxTokens ?? undefined,
+            customMaxContext: user.customMaxContext ?? undefined,
         };
 
         next();

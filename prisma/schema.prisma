@@ -17,7 +17,7 @@ model User {
   password         String // Hashed password
   preferredModel   String    @default("gemini-2.5-flash-lite") // AI model preference
   maxTokens        Int       @default(1000) // Max tokens for generation
-  maxContext       Int       @default(1000000) // Max characters of content sent to AI (1M for HaluAI Gateway)
+  maxContext       Int       @default(500000) // Max characters of content sent to AI (500k for HaluAI Gateway)
   customApiUrl     String? // Custom API URL (optional)
   customApiKey     String? // Custom API key (optional, encrypted)
   customModel      String? // Custom model name for custom API (e.g., "gpt-4o", "claude-3-opus")
@@ -29,12 +29,15 @@ model User {
   updatedAt        DateTime  @updatedAt
 
   // Relations
-  accounts      Account[]
-  sessions      Session[]
-  materials     Material[]
-  studySessions StudySession[]
-  quizAttempts  QuizAttempt[]
-  chatSessions  ChatSession[]
+  accounts        Account[]
+  sessions        Session[]
+  materials       Material[]
+  studySessions   StudySession[]
+  quizAttempts    QuizAttempt[]
+  chatSessions    ChatSession[]
+  materialLikes   MaterialLike[]
+  exploreContents ExploreContent[]
+  exploreLikes    ExploreLike[]
 
   @@map("users")
 }
@@ -97,6 +100,21 @@ model Material {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Relations
+  // Social Features
+  isPublic    Boolean   @default(false)
+  publishedAt DateTime?
+  views       Int       @default(0)
+
+  // Author Info (Snapshot at publish time or dynamic from User)
+  // We can just rely on the User relation, but for performance in feeds, sometimes denormalizing is nice.
+  // lets stick to relation for now, but maybe add 'category' or 'tags' later.
+
+  // Relations
+  likes        MaterialLike[]
+  forkedFromId String?
+  forkedFrom   Material?      @relation("MaterialForks", fields: [forkedFromId], references: [id])
+  forks        Material[]     @relation("MaterialForks")
+
   messages            Message[]
   quizzes             Quiz[]
   studySessions       StudySession[]
@@ -108,6 +126,18 @@ model Material {
   chatSessions        ChatSessionMaterial[]
 
   @@map("materials")
+}
+
+model MaterialLike {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, materialId])
+  @@map("material_likes")
 }
 
 // Chat Message - conversation history
@@ -241,4 +271,45 @@ model ChatSessionMessage {
   chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 
   @@map("chat_session_messages")
+}
+
+// Explore Content - Published snapshots of materials
+model ExploreContent {
+  id          String  @id @default(cuid())
+  title       String
+  description String? @db.Text
+  content     String? @db.Text
+  type        String
+
+  // Reference to original material (optional, for history)
+  // We do NOT use a foreign key constraint here so the original material can be deleted
+  originalMaterialId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Publisher
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Metrics
+  views      Int @default(0)
+  forksCount Int @default(0)
+
+  // Relations
+  likes ExploreLike[]
+
+  @@map("explore_contents")
+}
+
+model ExploreLike {
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exploreContentId String
+  exploreContent   ExploreContent @relation(fields: [exploreContentId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+
+  @@unique([userId, exploreContentId])
+  @@map("explore_likes")
 }

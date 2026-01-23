@@ -255,8 +255,32 @@ router.post("/:id/summary", async (req: Request, res: Response): Promise<void> =
             return;
         }
 
+        // Determinte content for summary
+        let contentToSummarize = material.content;
+
+        // For research mode or empty content, use chat history
+        if (!contentToSummarize || material.type === "research") {
+            const messages = await prisma.message.findMany({
+                where: { materialId: material.id },
+                orderBy: { createdAt: "asc" },
+                take: 50 // Limit to last 50 messages to catch the context
+            });
+
+            if (messages.length > 0) {
+                // Format chat history as content
+                contentToSummarize = messages.map(m =>
+                    `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+                ).join("\n\n");
+            } else if (material.description) {
+                contentToSummarize = `Topic: ${material.title}\nDescription: ${material.description}`;
+            } else {
+                contentToSummarize = `Topic: ${material.title}`;
+            }
+        }
+
         // Generate summary using AI with optional model, custom instructions, and language
-        const summary = await generateSummary(material.content, model, customText, undefined, language);
+        // Ensure content is not null/empty string if possible, though previous logic handles it
+        const summary = await generateSummary(contentToSummarize || "No content available.", model, customText, undefined, language);
 
         // Save summary to database
         await prisma.material.update({
@@ -592,6 +616,122 @@ router.post("/:id/append-text", async (req: Request, res: Response): Promise<voi
     } catch (error) {
         console.error("Error appending text:", error);
         res.status(500).json({ error: "Failed to append text" });
+    }
+});
+
+// POST /api/materials/:id/publish - Publish material (Create/Update Explore Snapshot)
+router.post("/:id/publish", async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Accept override title/description for the published card
+        const { title, description } = req.body;
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Content Moderation check
+        const publishTitle = title || material.title;
+        const publishDesc = description || material.description || "";
+        const combinedContent = `Title: ${publishTitle}\nDescription: ${publishDesc}\nContent: ${material.content || ''}`;
+
+        // Dynamic import to avoid circular dependencies
+        const { isContentSafe } = await import("../lib/ai");
+        const moderation = await isContentSafe(combinedContent);
+
+        if (!moderation.safe) {
+            res.status(400).json({
+                error: "Content Moderation Failed",
+                reason: moderation.reason || "Content contains restricted material."
+            });
+            return;
+        }
+
+        // Check if we already have an existing Explore snapshot for this material
+        // We need to cast prisma to any because the client might not be regenerated yet in dev
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const prismaAny = prisma as any;
+
+        const existingExplore = await prismaAny.exploreContent.findFirst({
+            where: { originalMaterialId: material.id }
+        });
+
+        let exploreContent;
+        if (existingExplore) {
+            // Update existing snapshot
+            exploreContent = await prismaAny.exploreContent.update({
+                where: { id: existingExplore.id },
+                data: {
+                    title: publishTitle,
+                    description: publishDesc,
+                    content: material.content,
+                    updatedAt: new Date()
+                }
+            });
+        } else {
+            // Create new snapshot
+            exploreContent = await prismaAny.exploreContent.create({
+                data: {
+                    title: publishTitle,
+                    description: publishDesc,
+                    content: material.content || "",
+                    type: material.type,
+                    userId: req.user!.id,
+                    originalMaterialId: material.id
+                }
+            });
+        }
+
+        // Mark local material as hasPublished (we can still use isPublic as a status indicator)
+        const updatedMaterial = await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                isPublic: true,
+                publishedAt: new Date()
+            },
+        });
+
+        res.json({ success: true, material: updatedMaterial, exploreContent });
+    } catch (error) {
+        console.error("Error publishing material:", error);
+        res.status(500).json({ error: "Failed to publish material" });
+    }
+});
+
+// POST /api/materials/:id/unpublish - Make material private
+router.post("/:id/unpublish", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        const updatedMaterial = await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                isPublic: false,
+                publishedAt: null
+            },
+        });
+
+        res.json({ success: true, material: updatedMaterial });
+    } catch (error) {
+        console.error("Error unpublishing material:", error);
+        res.status(500).json({ error: "Failed to unpublish material" });
     }
 });
 

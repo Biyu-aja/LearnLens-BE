@@ -69,8 +69,19 @@ export interface CustomAPIConfig {
 
 // Get AI client - uses custom API if configured, otherwise default
 export function getAIClient(customConfig?: CustomAPIConfig): { client: OpenAI; model: string } {
-    // If custom API is configured, create a new client
-    if (customConfig?.customApiUrl && customConfig?.customApiKey) {
+    // Only use custom API if customApiUrl is explicitly provided and not empty
+    // customApiKey might be undefined if it's already saved in the database
+    if (customConfig?.customApiUrl && customConfig.customApiUrl.trim() !== "") {
+        // We need an API key to use custom API
+        if (!customConfig.customApiKey) {
+            console.warn("⚠️  Custom API URL provided but no API key available");
+            // Fall back to default if no key is available
+            return {
+                client: defaultAI,
+                model: defaultModel,
+            };
+        }
+
         console.log(`🔧 Using custom API: ${customConfig.customApiUrl}`);
         const customClient = new OpenAI({
             apiKey: customConfig.customApiKey,
@@ -82,7 +93,8 @@ export function getAIClient(customConfig?: CustomAPIConfig): { client: OpenAI; m
         };
     }
 
-    // Otherwise use default
+    // Use default HaluAI Gateway
+    console.log(`🤖 Using HaluAI Gateway with model: ${defaultModel}`);
     return {
         client: defaultAI,
         model: defaultModel,
@@ -365,6 +377,50 @@ export async function chatWithMaterialStream(
     } catch (error: any) {
         console.error("AI Stream Error:", error);
         throw error;
+    }
+}
+
+// Check if content is safe (moderation)
+export async function isContentSafe(
+    content: string,
+    customConfig?: CustomAPIConfig
+): Promise<{ safe: boolean; reason?: string }> {
+    try {
+        const { client, model } = getAIClient(customConfig);
+
+        // We use a strict system prompt to detect unsafe content
+        const response = await client.chat.completions.create({
+            model: "gemini-2.5-flash-lite", // Use a cheap/fast model for moderation
+            messages: [
+                {
+                    role: "system",
+                    content: `You are a Content Safety Moderator. Your task is to analyze the user's text and determine if it contains ANY sexually explicit content, pornography, severe hate speech, or illegal acts. 
+                    
+                    If the content is SAFE, respond with strictly: "SAFE"
+                    If the content is UNSAFE, respond with strictly: "UNSAFE: <reason>" (e.g. UNSAFE: Sexual content)
+                    
+                    The content is educational material, so biological/medical terms are allowed if in an educational context. Only flag explicit/NSFW content.`
+                },
+                {
+                    role: "user",
+                    content: `Analyze this content:\n\n${content.slice(0, 10000)}`
+                },
+            ],
+            max_tokens: 50,
+        });
+
+        const result = response.choices[0]?.message?.content?.trim() || "SAFE";
+
+        if (result.startsWith("UNSAFE")) {
+            return { safe: false, reason: result.replace("UNSAFE:", "").trim() };
+        }
+
+        return { safe: true };
+    } catch (error) {
+        console.error("Moderation Check Failed:", error);
+        // Fail open or closed? For safety, maybe warn but allow if system error, 
+        // OR fail closed. Let's fail closed for safety.
+        return { safe: false, reason: "Content moderation service unavailable." };
     }
 }
 

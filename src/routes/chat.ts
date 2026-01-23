@@ -82,23 +82,28 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
         chatHistory.push({ role: "user", content: message });
 
         // Build custom API config from user settings
-        const customConfig: CustomAPIConfig | undefined = req.user!.customApiUrl ? {
-            customApiUrl: req.user!.customApiUrl,
-            customApiKey: req.user!.customApiKey,
-            customModel: req.user!.customModel,
-        } : undefined;
+        // Only use custom config if customApiUrl is explicitly set and not empty
+        const customConfig: CustomAPIConfig | undefined =
+            (req.user!.customApiUrl && req.user!.customApiUrl.trim() !== "") ? {
+                customApiUrl: req.user!.customApiUrl,
+                customApiKey: req.user!.customApiKey,
+                customModel: req.user!.customModel,
+            } : undefined;
 
         // Use custom settings if custom API is configured, otherwise use default settings
-        const maxTokens = customConfig ? (req.user!.customMaxTokens || 1000) : req.user!.maxTokens;
-        const maxContext = customConfig ? (req.user!.customMaxContext || 8000) : req.user!.maxContext;
+        const maxTokens = customConfig ? (req.user!.customMaxTokens ?? 1000) : (req.user!.maxTokens ?? 1000);
+        const maxContext = customConfig ? (req.user!.customMaxContext ?? 8000) : (req.user!.maxContext ?? 500000);
 
         // Get AI response using user's preferred model (or custom API)
+        const preferredModel = req.user!.preferredModel ?? "gemini-2.5-flash-lite";
+        // Use smaller context for empty/research mode materials
+        const effectiveMaxContext = (material.content && material.content.trim()) ? maxContext : 1000;
         const aiResponse = await chatWithMaterial(
-            material.content,
+            material.content ?? "", // Handle null content for research mode
             chatHistory,
-            req.user!.preferredModel,
+            preferredModel,
             maxTokens,
-            maxContext,
+            effectiveMaxContext,
             customConfig,
             language as "id" | "en"
         );
@@ -181,24 +186,29 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
         let fullContent = "";
 
         // Build custom API config from user settings
-        const customConfig: CustomAPIConfig | undefined = req.user!.customApiUrl ? {
-            customApiUrl: req.user!.customApiUrl,
-            customApiKey: req.user!.customApiKey,
-            customModel: req.user!.customModel,
-        } : undefined;
+        // Only use custom config if customApiUrl is explicitly set and not empty
+        const customConfig: CustomAPIConfig | undefined =
+            (req.user!.customApiUrl && req.user!.customApiUrl.trim() !== "") ? {
+                customApiUrl: req.user!.customApiUrl,
+                customApiKey: req.user!.customApiKey,
+                customModel: req.user!.customModel,
+            } : undefined;
 
         // Use custom settings if custom API is configured, otherwise use default settings
-        const maxTokens = customConfig ? (req.user!.customMaxTokens || 1000) : req.user!.maxTokens;
-        const maxContext = customConfig ? (req.user!.customMaxContext || 8000) : req.user!.maxContext;
+        const maxTokens = customConfig ? (req.user!.customMaxTokens ?? 1000) : (req.user!.maxTokens ?? 1000);
+        const maxContext = customConfig ? (req.user!.customMaxContext ?? 8000) : (req.user!.maxContext ?? 500000);
 
         try {
             // Stream AI response with language support
+            const preferredModel = req.user!.preferredModel ?? "gemini-2.5-flash-lite";
+            // Use smaller context for empty/research mode materials
+            const effectiveMaxContext = (material.content && material.content.trim()) ? maxContext : 1000;
             await chatWithMaterialStream(
-                material.content,
+                material.content ?? "", // Handle null content for research mode
                 chatHistory,
-                req.user!.preferredModel,
+                preferredModel,
                 maxTokens,
-                maxContext,
+                effectiveMaxContext,
                 (chunk: string) => {
                     fullContent += chunk;
                     res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);

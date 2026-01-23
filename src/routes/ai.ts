@@ -24,7 +24,7 @@ router.get("/:materialId/concepts", async (req: Request, res: Response): Promise
             return;
         }
 
-        const concepts = await generateKeyConcepts(material.content);
+        const concepts = await generateKeyConcepts(material.content || `Topic: ${material.title}\n${material.description || ''}`);
 
         res.json({ success: true, concepts });
     } catch (error) {
@@ -171,10 +171,30 @@ router.post("/:materialId/glossary", async (req: Request, res: Response): Promis
             return;
         }
 
-        // Import generateGlossary dynamically to avoid circular dependency
-        const { generateGlossary } = await import("../lib/ai");
+        // Determinte content for glossary
+        let contentForGlossary = material.content;
 
-        const glossary = await generateGlossary(material.content, model, undefined, language as Language);
+        // For research mode or empty content, use chat history
+        if (!contentForGlossary || material.type === "research") {
+            const messages = await prisma.message.findMany({
+                where: { materialId: material.id },
+                orderBy: { createdAt: "asc" },
+                take: 50 // Limit to last 50 messages
+            });
+
+            if (messages.length > 0) {
+                // Format chat history as content
+                contentForGlossary = messages.map(m =>
+                    `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+                ).join("\n\n");
+            } else if (material.description) {
+                contentForGlossary = `Topic: ${material.title}\nDescription: ${material.description}`;
+            } else {
+                contentForGlossary = `Topic: ${material.title}`;
+            }
+        }
+
+        const glossary = await generateGlossary(contentForGlossary || "No content available.", model, undefined, language as Language);
 
         if (glossary.length === 0) {
             res.status(500).json({ error: "Failed to generate glossary" });
@@ -329,7 +349,7 @@ RULES:
 TERM: "${term.trim()}"
 
 MATERIAL CONTEXT (for reference):
-${material.content.slice(0, 3000)}`,
+${(material.content || material.description || material.title).slice(0, 3000)}`,
                 },
             ],
             max_tokens: 300,
@@ -472,7 +492,7 @@ router.post("/:materialId/flashcards", async (req: Request, res: Response): Prom
 
         // Generate flashcards using AI
         const flashcards = await generateFlashcards(
-            material.content,
+            material.content || `Topic: ${material.title}\n${material.description || ''}`,
             count,
             undefined,
             undefined,
