@@ -659,6 +659,9 @@ router.post("/:id/publish", async (req: Request, res: Response): Promise<void> =
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const prismaAny = prisma as any;
 
+        // Use custom content if provided, otherwise use material content
+        const publishContent = req.body.content !== undefined ? req.body.content : (material.content || "");
+
         const existingExplore = await prismaAny.exploreContent.findFirst({
             where: { originalMaterialId: material.id }
         });
@@ -671,7 +674,7 @@ router.post("/:id/publish", async (req: Request, res: Response): Promise<void> =
                 data: {
                     title: publishTitle,
                     description: publishDesc,
-                    content: material.content,
+                    content: publishContent,
                     updatedAt: new Date()
                 }
             });
@@ -681,7 +684,7 @@ router.post("/:id/publish", async (req: Request, res: Response): Promise<void> =
                 data: {
                     title: publishTitle,
                     description: publishDesc,
-                    content: material.content || "",
+                    content: publishContent,
                     type: material.type,
                     userId: req.user!.id,
                     originalMaterialId: material.id

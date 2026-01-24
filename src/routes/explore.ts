@@ -13,12 +13,14 @@ const prismaAny = prisma as any;
 // GET /api/explore - List public content (ExploreContent)
 router.get("/", async (req: Request, res: Response) => {
     try {
-        const { query, sort } = req.query;
+        const { query, sort, userId } = req.query;
         const searchQuery = query ? String(query) : undefined;
+        const filterUserId = userId ? String(userId) : undefined;
 
         // Use ExploreContent model
         const contents = await prismaAny.exploreContent.findMany({
             where: {
+                ...(filterUserId ? { userId: filterUserId } : {}),
                 ...(searchQuery ? {
                     OR: [
                         { title: { contains: searchQuery, mode: 'insensitive' } },
@@ -29,6 +31,7 @@ router.get("/", async (req: Request, res: Response) => {
             include: {
                 user: {
                     select: {
+                        id: true,
                         name: true,
                         image: true,
                     }
