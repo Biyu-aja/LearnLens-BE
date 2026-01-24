@@ -17,7 +17,7 @@ router.get("/", async (req: Request, res: Response) => {
         const searchQuery = query ? String(query) : undefined;
         const filterUserId = userId ? String(userId) : undefined;
 
-        // Use ExploreContent model
+        // Use ExploreContent model with explicit selection to avoid fetching heavy 'content'
         const contents = await prismaAny.exploreContent.findMany({
             where: {
                 ...(filterUserId ? { userId: filterUserId } : {}),
@@ -28,7 +28,13 @@ router.get("/", async (req: Request, res: Response) => {
                     ]
                 } : {})
             },
-            include: {
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                type: true,
+                createdAt: true,
+                forksCount: true,
                 user: {
                     select: {
                         id: true,
@@ -37,10 +43,11 @@ router.get("/", async (req: Request, res: Response) => {
                     }
                 },
                 _count: {
-                    select: { likes: true } // forks count is a field now, but we might want related forks if we link them
+                    select: { likes: true, comments: true }
                 },
                 likes: {
-                    where: { userId: req.user!.id }
+                    where: { userId: req.user!.id },
+                    select: { id: true }
                 }
             },
             orderBy: sort === 'popular'
@@ -55,7 +62,8 @@ router.get("/", async (req: Request, res: Response) => {
             ...m,
             isLiked: m.likes.length > 0,
             likeCount: m._count.likes,
-            forkCount: m.forksCount || 0, // Use the stored counter or relation
+            commentCount: m._count.comments,
+            forkCount: m.forksCount || 0, // Should be in DB now, but keep fallback
             likes: undefined,
             _count: undefined
         }));

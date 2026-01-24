@@ -29,12 +29,16 @@ model User {
   updatedAt        DateTime  @updatedAt
 
   // Relations
-  accounts      Account[]
-  sessions      Session[]
-  materials     Material[]
-  studySessions StudySession[]
-  quizAttempts  QuizAttempt[]
-  chatSessions  ChatSession[]
+  accounts        Account[]
+  sessions        Session[]
+  materials       Material[]
+  studySessions   StudySession[]
+  quizAttempts    QuizAttempt[]
+  chatSessions    ChatSession[]
+  exploreContents ExploreContent[]
+  materialLikes   MaterialLike[]
+  exploreLikes    ExploreLike[]
+  exploreComments ExploreComment[]
 
   @@map("users")
 }
@@ -84,17 +88,26 @@ model VerificationToken {
 
 // Learning Material - uploaded by user
 model Material {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  content     String?  @db.Text // Extracted text from PDF or raw text (optional for research mode)
-  description String?  @db.Text // Initial question/description for research mode
+  content     String?   @db.Text // Extracted text from PDF or raw text (optional for research mode)
+  description String?   @db.Text // Initial question/description for research mode
   type        String // "pdf", "text", or "research"
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isPublic    Boolean   @default(false)
+  publishedAt DateTime?
+  views       Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Owner
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Forking
+  forkedFromId String?
+  forkedFrom   Material?  @relation("MaterialForks", fields: [forkedFromId], references: [id])
+  forks        Material[] @relation("MaterialForks")
 
   // Relations
   messages            Message[]
@@ -106,8 +119,72 @@ model Material {
   flashcards          String?               @db.Text // AI-generated flashcards (JSON)
   learningEvaluations LearningEvaluation[]
   chatSessions        ChatSessionMaterial[]
+  likes               MaterialLike[]
+  exploreContent      ExploreContent?
 
   @@map("materials")
+}
+
+// Public Explore Content - Snapshot of public materials
+model ExploreContent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  content     String?  @db.Text
+  type        String
+  forksCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  originalMaterialId String   @unique // One snapshot per material
+  originalMaterial   Material @relation(fields: [originalMaterialId], references: [id], onDelete: Cascade)
+
+  likes    ExploreLike[]
+  comments ExploreComment[]
+
+  @@map("explore_contents")
+}
+
+// Explore Interactions
+model ExploreLike {
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exploreContentId String
+  exploreContent   ExploreContent @relation(fields: [exploreContentId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+
+  @@unique([userId, exploreContentId])
+  @@map("explore_likes")
+}
+
+model ExploreComment {
+  id               String         @id @default(cuid())
+  content          String         @db.Text
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exploreContentId String
+  exploreContent   ExploreContent @relation(fields: [exploreContentId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@map("explore_comments")
+}
+
+// Material Likes (for direct material interaction if needed)
+model MaterialLike {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, materialId])
+  @@map("material_likes")
 }
 
 // Chat Message - conversation history

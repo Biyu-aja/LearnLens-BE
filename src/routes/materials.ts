@@ -8,6 +8,20 @@ const pdfParseLib = require("pdf-parse");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mammoth = require("mammoth");
 
+// Helper to get a working prisma client (fallback mechanism)
+const getPrisma = async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const globalPrisma = prisma as any;
+    if (globalPrisma.exploreContent) return globalPrisma;
+
+    console.warn("Global Prisma client missing 'exploreContent'. Attempting fresh instantiation...");
+
+    // Lazy load to bypass cache if possible, or just new instance
+    const { PrismaClient } = await import("@prisma/client");
+    const newClient = new PrismaClient();
+    return newClient;
+};
+
 const router = Router();
 
 // Helper to handle pdf-parse export inconsistencies
@@ -77,6 +91,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
                 summary: true,
                 createdAt: true,
                 updatedAt: true,
+                isPublic: true,
                 _count: {
                     select: { messages: true, quizzes: true },
                 },
@@ -654,10 +669,20 @@ router.post("/:id/publish", async (req: Request, res: Response): Promise<void> =
             return;
         }
 
-        // Check if we already have an existing Explore snapshot for this material
-        // We need to cast prisma to any because the client might not be regenerated yet in dev
+
+
+        // Get dynamic prisma client
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const prismaAny = prisma as any;
+        const prismaAny = (await getPrisma()) as any;
+
+        // Ensure ExploreContent model is available (even after fallback)
+        if (!prismaAny.exploreContent) {
+            console.error("Prisma Client out of sync. Model ExploreContent not found.");
+            res.status(503).json({ error: "System updating database access. Please wait 10 seconds and try again." });
+            return;
+        }
+
+        // Use custom content if provided...
 
         // Use custom content if provided, otherwise use material content
         const publishContent = req.body.content !== undefined ? req.body.content : (material.content || "");
