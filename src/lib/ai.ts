@@ -119,7 +119,7 @@ export async function generateSummary(
                 { role: "system", content: getSummarySystemPrompt(language) },
                 { role: "user", content: getSummaryUserPrompt(content, customInstructions) },
             ],
-            max_tokens: 1500,
+            max_tokens: 10000,
         });
 
         return response.choices[0]?.message?.content || "Unable to generate summary.";
@@ -149,7 +149,7 @@ export async function generateKeyConcepts(
             { role: "system", content: getKeyConceptsSystemPrompt(language) },
             { role: "user", content: getKeyConceptsUserPrompt(content) },
         ],
-        max_tokens: 1500,
+        max_tokens: 9000,
     });
 
     return response.choices[0]?.message?.content || "Unable to extract key concepts.";
@@ -179,7 +179,7 @@ export async function generateGlossary(
                 { role: "system", content: getGlossarySystemPrompt(language) },
                 { role: "user", content: getGlossaryUserPrompt(content) },
             ],
-            max_tokens: 2000,
+            max_tokens: 9000,
         });
 
         try {
@@ -228,7 +228,7 @@ export async function generateQuiz(
                 { role: "system", content: getQuizSystemPrompt(count, difficulty, language) },
                 { role: "user", content: getQuizUserPrompt(content, count, difficulty, customInstructions) },
             ],
-            max_tokens: Math.min(4000, count * 300),
+            max_tokens: Math.min(6000, count * 300),
         });
 
         try {
