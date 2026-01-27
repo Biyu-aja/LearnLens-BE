@@ -495,7 +495,6 @@ router.post("/:materialId/flashcards", async (req: Request, res: Response): Prom
         const flashcards = await generateFlashcards(
             material.content || `Topic: ${material.title}\n${material.description || ''}`,
             count,
-            count,
             model,
             customConfig,
             language as Language

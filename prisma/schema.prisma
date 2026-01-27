@@ -39,6 +39,7 @@ model User {
   materialLikes   MaterialLike[]
   exploreLikes    ExploreLike[]
   exploreComments ExploreComment[]
+  exploreDislikes ExploreDislike[]
 
   @@map("users")
 }
@@ -142,8 +143,9 @@ model ExploreContent {
   originalMaterialId String   @unique // One snapshot per material
   originalMaterial   Material @relation(fields: [originalMaterialId], references: [id], onDelete: Cascade)
 
-  likes    ExploreLike[]
-  comments ExploreComment[]
+  likes           ExploreLike[]
+  comments        ExploreComment[]
+  exploreDislikes ExploreDislike[]
 
   @@map("explore_contents")
 }
@@ -172,6 +174,18 @@ model ExploreComment {
   updatedAt        DateTime       @updatedAt
 
   @@map("explore_comments")
+}
+
+model ExploreDislike {
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exploreContentId String
+  exploreContent   ExploreContent @relation(fields: [exploreContentId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+
+  @@unique([userId, exploreContentId])
+  @@map("explore_dislikes")
 }
 
 // Material Likes (for direct material interaction if needed)

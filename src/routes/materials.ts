@@ -172,7 +172,7 @@ router.post(
                     const pdfData = await parsePdf(req.file.buffer);
                     content = pdfData.text;
                     type = requestedType || "pdf";
-                    console.log("PDF parsed, content length:", content.length);
+                    console.log("PDF parsed, content length:", content?.length);
                 } else if (
                     mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
                     mimetype === "application/msword"

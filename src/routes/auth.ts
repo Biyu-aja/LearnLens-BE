@@ -297,7 +297,7 @@ router.post("/test-api", authMiddleware, async (req: Request, res: Response): Pr
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' })) as any;
             res.status(response.status).json({
                 error: errorData.error?.message || errorData.error || `API returned status ${response.status}`,
                 success: false
@@ -305,7 +305,7 @@ router.post("/test-api", authMiddleware, async (req: Request, res: Response): Pr
             return;
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
         const responseContent = data.choices?.[0]?.message?.content || 'Response received';
 
         res.json({

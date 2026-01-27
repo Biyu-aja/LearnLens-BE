@@ -117,6 +117,17 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
             },
         });
 
+        // If this is a research material, append the conversation to the content
+        if (material.type === "research") {
+            const newContent = `\n\nUser: ${message}\nAssistant: ${aiResponse}`;
+            await prisma.material.update({
+                where: { id: material.id },
+                data: {
+                    content: (material.content || "") + newContent
+                }
+            });
+        }
+
         res.json({
             success: true,
             userMessage,
@@ -225,6 +236,17 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
                     materialId: material.id,
                 },
             });
+
+            // If this is a research material, append the conversation to the content
+            if (material.type === "research") {
+                const newContent = `\n\nUser: ${message}\nAssistant: ${fullContent}`;
+                await prisma.material.update({
+                    where: { id: material.id },
+                    data: {
+                        content: (material.content || "") + newContent
+                    }
+                });
+            }
 
             // Send completion event with full message
             res.write(`data: ${JSON.stringify({ type: "done", message: assistantMessage })}\n\n`);
