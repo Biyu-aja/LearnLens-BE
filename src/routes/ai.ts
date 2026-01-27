@@ -42,7 +42,8 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
             model,
             materialIds = [],
             customText = "",  // Now used as custom instructions, not additional content
-            language = "en"   // Language for quiz generation
+            language = "en",   // Language for quiz generation
+            customConfig
         } = req.body;
 
         // If no materialIds provided, use the route param materialId
@@ -67,7 +68,7 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
         ).join("\n\n---\n\n");
 
         // Generate quiz questions using AI with configuration and language
-        const questions = await generateQuiz(combinedContent, count, model, difficulty, customText.trim() || undefined, undefined, language as Language);
+        const questions = await generateQuiz(combinedContent, count, model, difficulty, customText.trim() || undefined, customConfig, language as Language);
 
         if (questions.length === 0) {
             res.status(500).json({ error: "Failed to generate quiz questions" });
@@ -157,7 +158,7 @@ router.delete("/:materialId/quiz", async (req: Request, res: Response): Promise<
 // POST /api/ai/:materialId/glossary - Generate glossary for a material
 router.post("/:materialId/glossary", async (req: Request, res: Response): Promise<void> => {
     try {
-        const { model, language = "en" } = req.body;
+        const { model, language = "en", customConfig } = req.body;
 
         const material = await prisma.material.findFirst({
             where: {
@@ -194,7 +195,7 @@ router.post("/:materialId/glossary", async (req: Request, res: Response): Promis
             }
         }
 
-        const glossary = await generateGlossary(contentForGlossary || "No content available.", model, undefined, language as Language);
+        const glossary = await generateGlossary(contentForGlossary || "No content available.", model, customConfig, language as Language);
 
         if (glossary.length === 0) {
             res.status(500).json({ error: "Failed to generate glossary" });
@@ -476,7 +477,7 @@ PENTING:
 // POST /api/ai/:materialId/flashcards - Generate flashcards from material
 router.post("/:materialId/flashcards", async (req: Request, res: Response): Promise<void> => {
     try {
-        const { count = 10, language = "en" } = req.body;
+        const { count = 10, language = "en", model, customConfig } = req.body;
 
         const material = await prisma.material.findFirst({
             where: {
@@ -494,8 +495,9 @@ router.post("/:materialId/flashcards", async (req: Request, res: Response): Prom
         const flashcards = await generateFlashcards(
             material.content || `Topic: ${material.title}\n${material.description || ''}`,
             count,
-            undefined,
-            undefined,
+            count,
+            model,
+            customConfig,
             language as Language
         );
 
