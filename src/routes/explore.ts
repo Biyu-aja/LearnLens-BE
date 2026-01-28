@@ -193,9 +193,15 @@ router.post("/:id/dislike", async (req: Request, res: Response) => {
 router.get("/:id/comments", async (req: Request, res: Response) => {
     try {
         const comments = await prismaAny.exploreComment.findMany({
-            where: { exploreContentId: req.params.id },
+            where: { exploreContentId: req.params.id, parentId: null },
             include: {
-                user: { select: { id: true, name: true, image: true } }
+                user: { select: { id: true, name: true, image: true } },
+                replies: {
+                    include: {
+                        user: { select: { id: true, name: true, image: true } }
+                    },
+                    orderBy: { createdAt: 'asc' }
+                }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -209,7 +215,7 @@ router.get("/:id/comments", async (req: Request, res: Response) => {
 // POST /api/explore/:id/comments - Add comment
 router.post("/:id/comments", async (req: Request, res: Response) => {
     try {
-        const { content } = req.body;
+        const { content, parentId } = req.body;
         if (!content || !content.trim()) {
             res.status(400).json({ error: "Comment cannot be empty" });
             return;
@@ -219,10 +225,17 @@ router.post("/:id/comments", async (req: Request, res: Response) => {
             data: {
                 content: content.trim(),
                 exploreContentId: req.params.id,
-                userId: req.user!.id
+                userId: req.user!.id,
+                parentId: parentId || null
             },
             include: {
-                user: { select: { id: true, name: true, image: true } }
+                user: { select: { id: true, name: true, image: true } },
+                replies: {
+                    include: {
+                        user: { select: { id: true, name: true, image: true } }
+                    },
+                    orderBy: { createdAt: 'asc' }
+                }
             }
         });
         res.json({ success: true, comment });

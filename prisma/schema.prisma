@@ -173,6 +173,10 @@ model ExploreComment {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
+  parentId String?
+  parent   ExploreComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  ExploreComment[] @relation("CommentReplies")
+
   @@map("explore_comments")
 }
 
