@@ -1,10 +1,11 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { authMiddleware } from "../middleware/auth";
-import { generateQuiz, generateKeyConcepts, generateFlashcards, generateGlossary } from "../lib/ai";
+import { generateQuiz, generateKeyConcepts, generateFlashcards, generateGlossary, generateMindMap, generateStudyPlan } from "../lib/ai";
 import type { Language } from "../lib/prompts";
 
 const router = Router();
+
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
@@ -581,6 +582,254 @@ router.delete("/:materialId/flashcards", async (req: Request, res: Response): Pr
     } catch (error) {
         console.error("Error deleting flashcards:", error);
         res.status(500).json({ error: "Failed to delete flashcards" });
+    }
+});
+
+// POST /api/ai/:materialId/mindmap - Generate mind map for a material
+router.post("/:materialId/mindmap", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { language = "en", model, customConfig } = req.body;
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Generate mind map using AI
+        const mindMapData = await generateMindMap(
+            material.content || `Topic: ${material.title}\n${material.description || ''}`,
+            model,
+            customConfig,
+            language as Language
+        );
+
+        if (mindMapData.nodes.length === 0) {
+            res.status(500).json({ error: "Failed to generate mind map" });
+            return;
+        }
+
+        // Save mind map to material
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                mindMap: JSON.stringify(mindMapData),
+            },
+        });
+
+        res.json({ success: true, mindMap: mindMapData });
+    } catch (error) {
+        console.error("Error generating mind map:", error);
+        res.status(500).json({ error: "Failed to generate mind map" });
+    }
+});
+
+// GET /api/ai/:materialId/mindmap - Get saved mind map for a material
+router.get("/:materialId/mindmap", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+            select: {
+                id: true,
+                mindMap: true,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        let mindMap = { nodes: [], edges: [] };
+        if (material.mindMap) {
+            try {
+                mindMap = JSON.parse(material.mindMap as string);
+            } catch (e) {
+                mindMap = { nodes: [], edges: [] };
+            }
+        }
+
+        res.json({ success: true, mindMap });
+    } catch (error) {
+        console.error("Error fetching mind map:", error);
+        res.status(500).json({ error: "Failed to fetch mind map" });
+    }
+});
+
+// DELETE /api/ai/:materialId/mindmap - Delete mind map for a material
+router.delete("/:materialId/mindmap", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                mindMap: null,
+            },
+        });
+
+        res.json({ success: true, message: "Mind map deleted" });
+    } catch (error) {
+        console.error("Error deleting mind map:", error);
+        res.status(500).json({ error: "Failed to delete mind map" });
+    }
+});
+
+// POST /api/ai/:materialId/study-plan - Generate or regenerate study plan
+router.post("/:materialId/study-plan", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { language = "en", model, customConfig, focus } = req.body;
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Generate plan using AI
+        const planData = await generateStudyPlan(
+            material.content || `Topic: ${material.title}\n${material.description || ''}`,
+            model,
+            customConfig,
+            language as Language,
+            focus
+        );
+
+        if (planData.tasks.length === 0) {
+            res.status(500).json({ error: "Failed to generate study plan" });
+            return;
+        }
+
+        // Check if plan exists, delete old tasks if it does
+        const existingPlan = await prisma.studyPlan.findUnique({
+            where: {
+                materialId_userId: {
+                    materialId: material.id,
+                    userId: req.user!.id,
+                },
+            },
+        });
+
+        let planId = existingPlan?.id;
+
+        if (existingPlan) {
+            // Delete old tasks
+            await prisma.studyTask.deleteMany({
+                where: { studyPlanId: existingPlan.id },
+            });
+        } else {
+            // Create new plan
+            const newPlan = await prisma.studyPlan.create({
+                data: {
+                    materialId: material.id,
+                    userId: req.user!.id,
+                },
+            });
+            planId = newPlan.id;
+        }
+
+        // Create new tasks
+        await prisma.studyTask.createMany({
+            data: planData.tasks.map((t) => ({
+                studyPlanId: planId!,
+                day: t.day,
+                task: t.task,
+                description: t.description,
+            })),
+        });
+
+        // Fetch complete plan with tasks
+        const minFullPlan = await prisma.studyPlan.findUnique({
+            where: { id: planId },
+            include: {
+                tasks: {
+                    orderBy: [{ day: 'asc' }, { id: 'asc' }],
+                },
+            },
+        });
+
+        res.json({ success: true, plan: minFullPlan });
+    } catch (error) {
+        console.error("Error generating study plan:", error);
+        res.status(500).json({ error: "Failed to generate study plan" });
+    }
+});
+
+// GET /api/ai/:materialId/study-plan - Get active study plan
+router.get("/:materialId/study-plan", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const plan = await prisma.studyPlan.findUnique({
+            where: {
+                materialId_userId: {
+                    materialId: req.params.materialId,
+                    userId: req.user!.id,
+                },
+            },
+            include: {
+                tasks: {
+                    orderBy: [{ day: 'asc' }, { id: 'asc' }],
+                },
+            },
+        });
+
+        res.json({ success: true, plan });
+    } catch (error) {
+        console.error("Error fetching study plan:", error);
+        res.status(500).json({ error: "Failed to fetch study plan" });
+    }
+});
+
+// PATCH /api/ai/study-plan/task/:taskId - Update task status
+router.patch("/study-plan/task/:taskId", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { isCompleted } = req.body;
+        const { taskId } = req.params;
+
+        // Verify ownership through plan
+        const task = await prisma.studyTask.findUnique({
+            where: { id: taskId },
+            include: { studyPlan: true },
+        });
+
+        if (!task || task.studyPlan.userId !== req.user!.id) {
+            res.status(404).json({ error: "Task not found" });
+            return;
+        }
+
+        const updatedTask = await prisma.studyTask.update({
+            where: { id: taskId },
+            data: { isCompleted },
+        });
+
+        res.json({ success: true, task: updatedTask });
+    } catch (error) {
+        console.error("Error updating study task:", error);
+        res.status(500).json({ error: "Failed to update task" });
     }
 });
 

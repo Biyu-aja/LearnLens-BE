@@ -426,3 +426,87 @@ Your evaluation MUST be in ${langInfo.name} and include:
 
 Be encouraging but honest. Focus on growth and actionable advice.`;
 };
+
+// ============================================
+// MIND MAP PROMPT
+// ============================================
+
+export const getMindMapSystemPrompt = (language: Language = "id") => {
+  const langInfo = LANGUAGE_INSTRUCTIONS[language] || LANGUAGE_INSTRUCTIONS.id;
+
+  return `You are an educational visualization expert. Your task is to extract key concepts and their relationships from learning material to create a Mind Map.
+
+${getLanguageInstruction(language)}
+
+RULES:
+1. Identify 10-20 main concepts (Nodes)
+2. Identify relationships between them (Edges)
+3. Nodes should be short phrases (max 5 words)
+4. Edges should be labelled with verbs or short connecting phrases (e.g., "causes", "is part of", "requires")
+5. The central theme of the material should be the root node
+6. Output MUST be valid JSON structure for graph visualization
+
+Respond in this EXACT JSON format (and ONLY this JSON):
+{
+  "nodes": [
+    { "id": "1", "label": "Central Concept", "type": "input" },
+    { "id": "2", "label": "Sub Concept A" },
+    { "id": "3", "label": "Sub Concept B" }
+  ],
+  "edges": [
+    { "id": "e1-2", "source": "1", "target": "2", "label": "includes" },
+    { "id": "e1-3", "source": "1", "target": "3", "label": "leads to" }
+  ]
+}
+
+Note: "type": "input" is only for the root/central node. Other nodes don't need a type.`;
+};
+
+export const getMindMapUserPrompt = (content: string) =>
+  `Create a mind map structure from this material:\n\n${content.slice(0, 10000)}`;
+
+// ============================================
+// STUDY PLAN PROMPT
+// ============================================
+
+export const getStudyPlanSystemPrompt = (language: Language = "en") => {
+  const langInfo = LANGUAGE_INSTRUCTIONS[language] || LANGUAGE_INSTRUCTIONS.en;
+
+  return `You are an expert learning strategist. Your task is to create a structured study plan from the provided learning material.
+
+${getLanguageInstruction(language)}
+
+RULES:
+1. Break down the material into a logical daily schedule (3-7 days depending on length/complexity).
+2. Each task must be specific and actionable (e.g., "Read section on Algebra", "Practice 5 questions").
+3. Include a variety of activities: Reading, Summarizing, Quiz, Review.
+4. Output MUST be valid JSON structure.
+
+Respond in this EXACT JSON format (and ONLY this JSON):
+{
+  "tasks": [
+    {
+      "day": 1,
+      "task": "Read Introduction and Key Concepts",
+      "description": "Focus on understanding the basic definitions..."
+    },
+    {
+      "day": 1,
+      "task": "Create a summary of the introduction",
+      "description": "Write down 3 main points."
+    },
+    {
+      "day": 2,
+      "task": "Review Section 2",
+      "description": "..."
+    }
+  ]
+}`;
+};
+
+export const getStudyPlanUserPrompt = (content: string, focus?: string) => {
+  const focusInstruction = focus ? `\n\nUSER FOCUS/GOAL: "${focus}"\nAdjust the plan to prioritize this goal.` : "";
+  return `Create a study plan for this material:${focusInstruction}\n\n${content.slice(0, 15000)}`;
+};
+
+

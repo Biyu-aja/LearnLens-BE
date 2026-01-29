@@ -40,6 +40,7 @@ model User {
   exploreLikes    ExploreLike[]
   exploreComments ExploreComment[]
   exploreDislikes ExploreDislike[]
+  studyPlans      StudyPlan[]
 
   @@map("users")
 }
@@ -119,9 +120,11 @@ model Material {
   glossary            String?               @db.Text // AI-generated glossary (JSON)
   flashcards          String?               @db.Text // AI-generated flashcards (JSON)
   learningEvaluations LearningEvaluation[]
+  mindMap             String?               @db.Text // AI-generated mind map (JSON)
   chatSessions        ChatSessionMaterial[]
   likes               MaterialLike[]
   exploreContent      ExploreContent?
+  studyPlans          StudyPlan[]
 
   @@map("materials")
 }
@@ -336,4 +339,33 @@ model ChatSessionMessage {
   chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 
   @@map("chat_session_messages")
+}
+
+// Study Plan - AI-generated study schedule
+model StudyPlan {
+  id         String      @id @default(cuid())
+  materialId String
+  material   Material    @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks      StudyTask[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([materialId, userId]) // One active plan per material per user
+  @@map("study_plans")
+}
+
+model StudyTask {
+  id          String    @id @default(cuid())
+  studyPlanId String
+  studyPlan   StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
+  day         Int // Day number (1, 2, 3...)
+  task        String // "Read section 1", "Take quiz"
+  description String?   @db.Text
+  isCompleted Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("study_tasks")
 }

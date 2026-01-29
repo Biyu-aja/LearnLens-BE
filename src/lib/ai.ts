@@ -11,6 +11,10 @@ import {
     getChatSystemPrompt,
     getFlashcardSystemPrompt,
     getFlashcardUserPrompt,
+    getMindMapSystemPrompt,
+    getMindMapUserPrompt,
+    getStudyPlanSystemPrompt,
+    getStudyPlanUserPrompt,
     type Language,
 } from "./prompts";
 
@@ -208,6 +212,42 @@ export interface QuizQuestion {
     explanation?: string;
 }
 
+// Helper function to fix truncated JSON (especially arrays)
+function fixTruncatedJson(jsonStr: string): string {
+    let fixed = jsonStr.trim();
+
+    // Count brackets to detect truncation
+    const openBraces = (fixed.match(/{/g) || []).length;
+    const closeBraces = (fixed.match(/}/g) || []).length;
+    const openBrackets = (fixed.match(/\[/g) || []).length;
+    const closeBrackets = (fixed.match(/]/g) || []).length;
+
+    // If imbalanced, try to fix
+    if (openBraces !== closeBraces || openBrackets !== closeBrackets) {
+        // Remove trailing incomplete object/array entries
+        // Common patterns: trailing comma, incomplete string, incomplete object
+        fixed = fixed.replace(/,\s*"[^"]*$/, ''); // Remove incomplete key
+        fixed = fixed.replace(/,\s*\{[^}]*$/, ''); // Remove incomplete object at end
+        fixed = fixed.replace(/,\s*$/, ''); // Remove trailing comma
+
+        // Close any unclosed brackets/braces
+        const newOpenBrackets = (fixed.match(/\[/g) || []).length;
+        const newCloseBrackets = (fixed.match(/]/g) || []).length;
+        const newOpenBraces = (fixed.match(/{/g) || []).length;
+        const newCloseBraces = (fixed.match(/}/g) || []).length;
+
+        // Add missing closing brackets
+        for (let i = 0; i < newOpenBrackets - newCloseBrackets; i++) {
+            fixed += ']';
+        }
+        for (let i = 0; i < newOpenBraces - newCloseBraces; i++) {
+            fixed += '}';
+        }
+    }
+
+    return fixed;
+}
+
 // Generate quiz questions from the material
 export async function generateQuiz(
     content: string,
@@ -222,13 +262,15 @@ export async function generateQuiz(
         const { client, model: aiModel } = getAIClient(customConfig);
         const useModel = customConfig?.customModel || model || aiModel;
 
+        // Increase max_tokens to prevent truncation
+        // Each question with options, hint, explanation needs ~500-700 tokens
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
                 { role: "system", content: getQuizSystemPrompt(count, difficulty, language) },
                 { role: "user", content: getQuizUserPrompt(content, count, difficulty, customInstructions) },
             ],
-            max_tokens: Math.min(6000, count * 300),
+            max_tokens: Math.max(8000, count * 700),
         });
 
         try {
@@ -236,8 +278,21 @@ export async function generateQuiz(
             const jsonMatch = text.match(/\{[\s\S]*\}/);
             if (!jsonMatch) return [];
 
-            const parsed = JSON.parse(jsonMatch[0]);
-            return parsed.questions || [];
+            let jsonStr = jsonMatch[0];
+
+            // Try parsing directly first
+            try {
+                const parsed = JSON.parse(jsonStr);
+                return parsed.questions || [];
+            } catch {
+                // If direct parse fails, try to fix truncated JSON
+                console.log("Attempting to fix truncated quiz JSON...");
+                const fixedJson = fixTruncatedJson(jsonStr);
+                const parsed = JSON.parse(fixedJson);
+                const questions = parsed.questions || [];
+                console.log(`Recovered ${questions.length} questions from truncated response`);
+                return questions;
+            }
         } catch (e) {
             console.error("Failed to parse quiz response:", e);
             return [];
@@ -421,6 +476,112 @@ export async function isContentSafe(
         // Fail open or closed? For safety, maybe warn but allow if system error, 
         // OR fail closed. Let's fail closed for safety.
         return { safe: false, reason: "Content moderation service unavailable." };
+    }
+}
+
+
+// Mind Map interfaces
+export interface MindMapNode {
+    id: string;
+    label: string;
+    type?: string;
+}
+
+export interface MindMapEdge {
+    id: string;
+    source: string;
+    target: string;
+    label?: string;
+}
+
+export interface MindMapData {
+    nodes: MindMapNode[];
+    edges: MindMapEdge[];
+}
+
+// Generate mind map from material content
+export async function generateMindMap(
+    content: string,
+    model?: string,
+    customConfig?: CustomAPIConfig,
+    language: Language = "en"
+): Promise<MindMapData> {
+    try {
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
+            messages: [
+                { role: "system", content: getMindMapSystemPrompt(language) },
+                { role: "user", content: getMindMapUserPrompt(content) },
+            ],
+            max_tokens: 4000,
+        });
+
+        try {
+            const text = response.choices[0]?.message?.content || "{}";
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) return { nodes: [], edges: [] };
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed;
+        } catch (e) {
+            console.error("Failed to parse mind map response:", e);
+            return { nodes: [], edges: [] };
+        }
+    } catch (error: any) {
+        console.error("AI Mind Map Error:", error);
+        return { nodes: [], edges: [] };
+    }
+}
+
+// Study Plan interfaces
+export interface StudyTask {
+    day: number;
+    task: string;
+    description?: string;
+}
+
+export interface StudyPlanData {
+    tasks: StudyTask[];
+}
+
+// Generate study plan from material content
+export async function generateStudyPlan(
+    content: string,
+    model?: string,
+    customConfig?: CustomAPIConfig,
+    language: Language = "en",
+    focus?: string
+): Promise<StudyPlanData> {
+    try {
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || model || aiModel;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
+            messages: [
+                { role: "system", content: getStudyPlanSystemPrompt(language) },
+                { role: "user", content: getStudyPlanUserPrompt(content, focus) },
+            ],
+            max_tokens: 4000,
+        });
+
+        try {
+            const text = response.choices[0]?.message?.content || "{}";
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) return { tasks: [] };
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed;
+        } catch (e) {
+            console.error("Failed to parse study plan response:", e);
+            return { tasks: [] };
+        }
+    } catch (error: any) {
+        console.error("AI Study Plan Error:", error);
+        return { tasks: [] };
     }
 }
 
