@@ -585,4 +585,216 @@ export async function generateStudyPlan(
     }
 }
 
+// Task Verification interfaces
+export interface TaskQuestion {
+    question: string;
+    description?: string; // Additional explanation/hints for the question
+    context?: string;
+}
+
+export interface TaskEvaluation {
+    passed: boolean;
+    score: number; // 0-100
+    feedback: string;
+    correctAnswer?: string;
+}
+
+// Generate an essay question for a study plan task
+export async function generateTaskQuestion(
+    task: string,
+    taskDescription: string | undefined,
+    materialContent: string,
+    planTitle: string, // Added planTitle for context
+    customConfig?: CustomAPIConfig,
+    language: Language = "en"
+): Promise<TaskQuestion> {
+    try {
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || aiModel;
+
+        const langName = language === "id" ? "Indonesian" : language === "en" ? "English" : language;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are an educational assessment expert. Create ONE specific verification question.
+
+CONTEXT:
+- Main Topic: "${planTitle}"
+- Task: "${task}"
+${taskDescription ? `- Task Description: "${taskDescription}"` : ""}
+
+RULES:
+1. If Task Description exists, BASE YOUR QUESTION ON IT. Extract specific concepts mentioned (e.g., analogies, key terms, examples) and ask about those.
+2. If Task is generic (Review, Summary, Quiz), ask about Main Topic concepts instead.
+3. Question must be answerable in 2-4 sentences.
+4. Respond in ${langName}.
+
+OUTPUT (JSON only):
+{"question": "Specific question here", "description": "What aspects to cover in the answer"}`
+                },
+                {
+                    role: "user",
+                    content: `Create a verification question.
+
+TOPIC: ${planTitle}
+TASK: ${task}
+${taskDescription ? `DETAILS: ${taskDescription}` : ""}
+
+MATERIAL EXCERPT:
+${materialContent.slice(0, 2500)}
+
+Generate a SPECIFIC question based on the task details above. Do not just repeat the task name.`
+                }
+            ],
+            max_tokens: 500,
+        });
+
+        try {
+            const text = response.choices[0]?.message?.content || "{}";
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+            // Smart Fallback Helper
+            const isGenericTask = /review|summary|recap|quiz|test|exam|ulangan|ringkasan/i.test(task);
+            const fallbackSubject = isGenericTask ? planTitle : task;
+
+            const fallbackResponse = {
+                question: `Jelaskan hal-hal penting yang Anda pelajari tentang "${fallbackSubject}".`,
+                description: `Sebutkan poin-poin utama dari materi ini dan jelaskan pemahaman Anda dengan kata-kata sendiri.`,
+            };
+
+            if (!jsonMatch) {
+                return fallbackResponse;
+            }
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return {
+                question: parsed.question || fallbackResponse.question,
+                description: parsed.description || fallbackResponse.description,
+            };
+        } catch (e) {
+            console.error("Failed to parse task question response:", e);
+            const isGenericTask = /review|summary|recap|quiz|test|exam|ulangan|ringkasan/i.test(task);
+            const fallbackSubject = isGenericTask ? planTitle : task;
+            return {
+                question: `Jelaskan hal-hal penting yang Anda pelajari tentang "${fallbackSubject}".`,
+                description: `Sebutkan poin-poin utama dari materi ini dan jelaskan pemahaman Anda dengan kata-kata sendiri.`,
+            };
+        }
+    } catch (error: any) {
+        console.error("AI Task Question Error:", error);
+        const isGenericTask = /review|summary|recap|quiz|test|exam|ulangan|ringkasan/i.test(task);
+        const fallbackSubject = isGenericTask ? planTitle : task;
+        return {
+            question: `Jelaskan hal-hal penting yang Anda pelajari tentang "${fallbackSubject}".`,
+            description: `Sebutkan poin-poin utama dari materi ini dan jelaskan pemahaman Anda dengan kata-kata sendiri.`,
+        };
+    }
+}
+
+// Evaluate user's answer to a task verification question
+export async function evaluateTaskAnswer(
+    task: string,
+    question: string,
+    userAnswer: string,
+    materialContent: string,
+    customConfig?: CustomAPIConfig,
+    language: Language = "en"
+): Promise<TaskEvaluation> {
+    try {
+        const { client, model: aiModel } = getAIClient(customConfig);
+        const useModel = customConfig?.customModel || aiModel;
+
+        const langName = language === "id" ? "Indonesian" : language === "en" ? "English" : language;
+
+        const response = await client.chat.completions.create({
+            model: useModel,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are an educational assessment expert. Your task is to evaluate a student's answer to verify their understanding of a study task.
+
+Evaluation Criteria:
+1. Does the answer demonstrate understanding of the core concepts?
+2. Is the answer accurate based on the reference material?
+3. Is the answer sufficiently detailed (not just a one-word response)?
+
+Scoring:
+- 60-100: PASS - Shows basic understanding
+- 0-59: FAIL - Needs more study
+
+Rules:
+1. Be encouraging but honest
+2. Provide constructive feedback
+3. If failed, briefly explain what was missing or incorrect
+4. Respond in ${langName}
+
+Respond in JSON format:
+{
+  "passed": true/false,
+  "score": 0-100,
+  "feedback": "Your feedback here",
+  "correctAnswer": "Brief correct answer or key points (only if failed)"
+}`
+                },
+                {
+                    role: "user",
+                    content: `Study Task: ${task}
+
+Question: ${question}
+
+Student's Answer: ${userAnswer}
+
+Reference Material:
+${materialContent.slice(0, 4000)}
+
+Evaluate the student's answer.`
+                }
+            ],
+            max_tokens: 800,
+        });
+
+        try {
+            const text = response.choices[0]?.message?.content || "{}";
+            console.log("🔍 Evaluation raw response:", text.slice(0, 500));
+
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+                console.error("❌ No JSON found in evaluation response");
+                return {
+                    passed: false,
+                    score: 0,
+                    feedback: "Tidak dapat mengevaluasi jawaban Anda. Silakan coba lagi.",
+                };
+            }
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            console.log("✅ Evaluation parsed:", { passed: parsed.passed, score: parsed.score });
+
+            return {
+                passed: parsed.passed ?? false,
+                score: parsed.score ?? 0,
+                feedback: parsed.feedback || "Tidak ada feedback tersedia.",
+                correctAnswer: parsed.correctAnswer,
+            };
+        } catch (e) {
+            console.error("❌ Failed to parse evaluation response:", e);
+            return {
+                passed: false,
+                score: 0,
+                feedback: "Terjadi kesalahan saat mengevaluasi. Silakan coba lagi.",
+            };
+        }
+    } catch (error: any) {
+        console.error("❌ AI Evaluation Error:", error?.message || error);
+        return {
+            passed: false,
+            score: 0,
+            feedback: `Layanan evaluasi sedang bermasalah. Silakan coba lagi dalam beberapa saat.`,
+        };
+    }
+}
+
 export default defaultAI;

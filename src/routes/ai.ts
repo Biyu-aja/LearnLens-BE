@@ -833,6 +833,132 @@ router.patch("/study-plan/task/:taskId", async (req: Request, res: Response): Pr
     }
 });
 
+// POST /api/ai/task/:taskId/question - Generate essay question for task verification
+router.post("/task/:taskId/question", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { taskId } = req.params;
+        const { language = "en" } = req.body;
+
+        // Fetch task with related study plan and material
+        const task = await prisma.studyTask.findUnique({
+            where: { id: taskId },
+            include: {
+                studyPlan: {
+                    include: {
+                        material: true,
+                    },
+                },
+            },
+        });
+
+        if (!task) {
+            res.status(404).json({ error: "Task not found" });
+            return;
+        }
+
+        // Verify ownership
+        if (task.studyPlan.userId !== req.user!.id) {
+            res.status(403).json({ error: "Access denied" });
+            return;
+        }
+
+        const material = task.studyPlan.material;
+        const content = material.content || `Topic: ${material.title}\n${material.description || ''}`;
+
+        // Generate essay question using AI
+        const { generateTaskQuestion } = await import("../lib/ai");
+        const questionData = await generateTaskQuestion(
+            task.task,
+            task.description || undefined,
+            content,
+            task.studyPlan.material.title, // Pass plan title for context (from Material)
+            undefined, // customConfig
+            language as Language
+        );
+
+        res.json({
+            success: true,
+            question: questionData.question,
+            description: questionData.description,
+            taskId: task.id,
+            task: task.task,
+        });
+    } catch (error) {
+        console.error("Error generating task question:", error);
+        res.status(500).json({ error: "Failed to generate question" });
+    }
+});
+
+// POST /api/ai/task/:taskId/evaluate - Evaluate user's answer for task verification
+router.post("/task/:taskId/evaluate", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { taskId } = req.params;
+        const { question, answer, language = "en" } = req.body;
+
+        if (!question || !answer) {
+            res.status(400).json({ error: "Question and answer are required" });
+            return;
+        }
+
+        // Fetch task with related study plan and material
+        const task = await prisma.studyTask.findUnique({
+            where: { id: taskId },
+            include: {
+                studyPlan: {
+                    include: {
+                        material: true,
+                    },
+                },
+            },
+        });
+
+        if (!task) {
+            res.status(404).json({ error: "Task not found" });
+            return;
+        }
+
+        // Verify ownership
+        if (task.studyPlan.userId !== req.user!.id) {
+            res.status(403).json({ error: "Access denied" });
+            return;
+        }
+
+        const material = task.studyPlan.material;
+        const content = material.content || `Topic: ${material.title}\n${material.description || ''}`;
+
+        // Evaluate answer using AI
+        const { evaluateTaskAnswer } = await import("../lib/ai");
+        const evaluation = await evaluateTaskAnswer(
+            task.task,
+            question,
+            answer,
+            content,
+            undefined, // customConfig
+            language as Language
+        );
+
+        // If passed, mark task as complete
+        if (evaluation.passed) {
+            await prisma.studyTask.update({
+                where: { id: taskId },
+                data: { isCompleted: true },
+            });
+        }
+
+        res.json({
+            success: true,
+            passed: evaluation.passed,
+            score: evaluation.score,
+            feedback: evaluation.feedback,
+            correctAnswer: evaluation.correctAnswer,
+            taskCompleted: evaluation.passed,
+        });
+    } catch (error) {
+        console.error("Error evaluating answer:", error);
+        res.status(500).json({ error: "Failed to evaluate answer" });
+    }
+});
+
 export default router;
 
 
