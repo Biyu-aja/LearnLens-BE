@@ -665,6 +665,42 @@ router.get("/:materialId/mindmap", async (req: Request, res: Response): Promise<
     }
 });
 
+// PUT /api/ai/:materialId/mindmap - Save user-edited mind map
+router.put("/:materialId/mindmap", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { mindMap } = req.body;
+
+        if (!mindMap || !mindMap.nodes) {
+            res.status(400).json({ error: "Invalid mind map data" });
+            return;
+        }
+
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.materialId,
+                userId: req.user!.id,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        await prisma.material.update({
+            where: { id: material.id },
+            data: {
+                mindMap: JSON.stringify(mindMap),
+            },
+        });
+
+        res.json({ success: true, message: "Mind map saved" });
+    } catch (error) {
+        console.error("Error saving mind map:", error);
+        res.status(500).json({ error: "Failed to save mind map" });
+    }
+});
+
 // DELETE /api/ai/:materialId/mindmap - Delete mind map for a material
 router.delete("/:materialId/mindmap", async (req: Request, res: Response): Promise<void> => {
     try {
@@ -753,13 +789,15 @@ router.post("/:materialId/study-plan", async (req: Request, res: Response): Prom
             planId = newPlan.id;
         }
 
-        // Create new tasks
+        // Create new tasks with pre-generated questions
         await prisma.studyTask.createMany({
             data: planData.tasks.map((t) => ({
                 studyPlanId: planId!,
                 day: t.day,
                 task: t.task,
                 description: t.description,
+                question: t.question,
+                questionHint: t.questionHint,
             })),
         });
 
@@ -862,17 +900,29 @@ router.post("/task/:taskId/question", async (req: Request, res: Response): Promi
             return;
         }
 
+        // Use pre-generated question if available
+        if (task.question) {
+            res.json({
+                success: true,
+                question: task.question,
+                description: task.questionHint || "Answer in your own words.",
+                taskId: task.id,
+                task: task.task,
+            });
+            return;
+        }
+
+        // Fallback: Generate question using AI (for old tasks without pre-generated questions)
         const material = task.studyPlan.material;
         const content = material.content || `Topic: ${material.title}\n${material.description || ''}`;
 
-        // Generate essay question using AI
         const { generateTaskQuestion } = await import("../lib/ai");
         const questionData = await generateTaskQuestion(
             task.task,
             task.description || undefined,
             content,
-            task.studyPlan.material.title, // Pass plan title for context (from Material)
-            undefined, // customConfig
+            task.studyPlan.material.title,
+            undefined,
             language as Language
         );
 
@@ -884,8 +934,8 @@ router.post("/task/:taskId/question", async (req: Request, res: Response): Promi
             task: task.task,
         });
     } catch (error) {
-        console.error("Error generating task question:", error);
-        res.status(500).json({ error: "Failed to generate question" });
+        console.error("Error getting task question:", error);
+        res.status(500).json({ error: "Failed to get question" });
     }
 });
 

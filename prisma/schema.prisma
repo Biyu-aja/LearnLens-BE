@@ -357,15 +357,17 @@ model StudyPlan {
 }
 
 model StudyTask {
-  id          String    @id @default(cuid())
-  studyPlanId String
-  studyPlan   StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
-  day         Int // Day number (1, 2, 3...)
-  task        String // "Read section 1", "Take quiz"
-  description String?   @db.Text
-  isCompleted Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  studyPlanId  String
+  studyPlan    StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
+  day          Int // Day number (1, 2, 3...)
+  task         String // "Read section 1", "Take quiz"
+  description  String?   @db.Text
+  question     String?   @db.Text // Pre-generated verification question
+  questionHint String?   @db.Text // Hint for the question
+  isCompleted  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@map("study_tasks")
 }

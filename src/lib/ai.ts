@@ -510,6 +510,9 @@ export async function generateMindMap(
         const { client, model: aiModel } = getAIClient(customConfig);
         const useModel = customConfig?.customModel || model || aiModel;
 
+        console.log("[generateMindMap] Using model:", useModel);
+        console.log("[generateMindMap] Content length:", content?.length || 0);
+
         const response = await client.chat.completions.create({
             model: useModel,
             messages: [
@@ -521,18 +524,24 @@ export async function generateMindMap(
 
         try {
             const text = response.choices[0]?.message?.content || "{}";
+            console.log("[generateMindMap] Raw response:", text.substring(0, 500));
+
             const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) return { nodes: [], edges: [] };
+            if (!jsonMatch) {
+                console.error("[generateMindMap] No JSON found in response");
+                return { nodes: [], edges: [] };
+            }
 
             const parsed = JSON.parse(jsonMatch[0]);
+            console.log("[generateMindMap] Parsed nodes:", parsed.nodes?.length || 0, "edges:", parsed.edges?.length || 0);
             return parsed;
         } catch (e) {
-            console.error("Failed to parse mind map response:", e);
+            console.error("[generateMindMap] Failed to parse response:", e);
             return { nodes: [], edges: [] };
         }
     } catch (error: any) {
-        console.error("AI Mind Map Error:", error);
-        return { nodes: [], edges: [] };
+        console.error("[generateMindMap] AI Error:", error.message || error);
+        throw error; // Re-throw to propagate the actual error
     }
 }
 
@@ -541,6 +550,8 @@ export interface StudyTask {
     day: number;
     task: string;
     description?: string;
+    question?: string;      // Pre-generated verification question
+    questionHint?: string;  // Hint for the question
 }
 
 export interface StudyPlanData {
@@ -661,8 +672,8 @@ Generate a SPECIFIC question based on the task details above. Do not just repeat
             const fallbackSubject = isGenericTask ? planTitle : task;
 
             const fallbackResponse = {
-                question: `Jelaskan hal-hal penting yang Anda pelajari tentang "${fallbackSubject}".`,
-                description: `Sebutkan poin-poin utama dari materi ini dan jelaskan pemahaman Anda dengan kata-kata sendiri.`,
+                question: `Explain the key concepts you learned about "${fallbackSubject}".`,
+                description: `Describe the main points in your own words.`,
             };
 
             if (!jsonMatch) {
@@ -679,8 +690,8 @@ Generate a SPECIFIC question based on the task details above. Do not just repeat
             const isGenericTask = /review|summary|recap|quiz|test|exam|ulangan|ringkasan/i.test(task);
             const fallbackSubject = isGenericTask ? planTitle : task;
             return {
-                question: `Jelaskan hal-hal penting yang Anda pelajari tentang "${fallbackSubject}".`,
-                description: `Sebutkan poin-poin utama dari materi ini dan jelaskan pemahaman Anda dengan kata-kata sendiri.`,
+                question: `Explain the key concepts you learned about "${fallbackSubject}".`,
+                description: `Describe the main points in your own words.`,
             };
         }
     } catch (error: any) {
@@ -688,8 +699,8 @@ Generate a SPECIFIC question based on the task details above. Do not just repeat
         const isGenericTask = /review|summary|recap|quiz|test|exam|ulangan|ringkasan/i.test(task);
         const fallbackSubject = isGenericTask ? planTitle : task;
         return {
-            question: `Jelaskan hal-hal penting yang Anda pelajari tentang "${fallbackSubject}".`,
-            description: `Sebutkan poin-poin utama dari materi ini dan jelaskan pemahaman Anda dengan kata-kata sendiri.`,
+            question: `Explain the key concepts you learned about "${fallbackSubject}".`,
+            description: `Describe the main points in your own words.`,
         };
     }
 }
@@ -714,46 +725,40 @@ export async function evaluateTaskAnswer(
             messages: [
                 {
                     role: "system",
-                    content: `You are an educational assessment expert. Your task is to evaluate a student's answer to verify their understanding of a study task.
+                    content: `You are a SUPPORTIVE educational evaluator. Your goal is to ENCOURAGE learning, not to be strict.
 
-Evaluation Criteria:
-1. Does the answer demonstrate understanding of the core concepts?
-2. Is the answer accurate based on the reference material?
-3. Is the answer sufficiently detailed (not just a one-word response)?
+EVALUATION APPROACH:
+- Be GENEROUS with scoring - any sign of understanding should be rewarded
+- Even partial answers show effort and should pass
+- Focus on what the student GOT RIGHT, not what's missing
 
-Scoring:
-- 60-100: PASS - Shows basic understanding
-- 0-59: FAIL - Needs more study
+SCORING (BE LENIENT):
+- 50-100: PASS - Student shows ANY understanding (even partial/basic)
+- 0-49: FAIL - Only if answer is completely wrong or irrelevant
 
-Rules:
-1. Be encouraging but honest
-2. Provide constructive feedback
-3. If failed, briefly explain what was missing or incorrect
-4. Respond in ${langName}
+IMPORTANT RULES:
+1. If student shows they tried and has some understanding → PASS (50+)
+2. Only fail if answer shows zero effort or is totally off-topic
+3. Always start feedback with something positive
+4. Be warm and encouraging in ${langName}
+5. Short, helpful feedback (2-3 sentences max)
 
-Respond in JSON format:
-{
-  "passed": true/false,
-  "score": 0-100,
-  "feedback": "Your feedback here",
-  "correctAnswer": "Brief correct answer or key points (only if failed)"
-}`
+Respond in JSON:
+{"passed": true/false, "score": 0-100, "feedback": "Encouraging feedback", "correctAnswer": "Only if failed"}`
                 },
                 {
                     role: "user",
-                    content: `Study Task: ${task}
-
+                    content: `Task: ${task}
 Question: ${question}
-
 Student's Answer: ${userAnswer}
 
-Reference Material:
-${materialContent.slice(0, 4000)}
+Material (for reference):
+${materialContent.slice(0, 3000)}
 
-Evaluate the student's answer.`
+Evaluate generously. If they show any understanding, pass them.`
                 }
             ],
-            max_tokens: 800,
+            max_tokens: 500,
         });
 
         try {
@@ -766,7 +771,7 @@ Evaluate the student's answer.`
                 return {
                     passed: false,
                     score: 0,
-                    feedback: "Tidak dapat mengevaluasi jawaban Anda. Silakan coba lagi.",
+                    feedback: "Could not evaluate your answer. Please try again.",
                 };
             }
 
@@ -776,7 +781,7 @@ Evaluate the student's answer.`
             return {
                 passed: parsed.passed ?? false,
                 score: parsed.score ?? 0,
-                feedback: parsed.feedback || "Tidak ada feedback tersedia.",
+                feedback: parsed.feedback || "No feedback available.",
                 correctAnswer: parsed.correctAnswer,
             };
         } catch (e) {
@@ -784,7 +789,7 @@ Evaluate the student's answer.`
             return {
                 passed: false,
                 score: 0,
-                feedback: "Terjadi kesalahan saat mengevaluasi. Silakan coba lagi.",
+                feedback: "An error occurred while evaluating. Please try again.",
             };
         }
     } catch (error: any) {
@@ -792,7 +797,7 @@ Evaluate the student's answer.`
         return {
             passed: false,
             score: 0,
-            feedback: `Layanan evaluasi sedang bermasalah. Silakan coba lagi dalam beberapa saat.`,
+            feedback: `Evaluation service is temporarily unavailable. Please try again later.`,
         };
     }
 }

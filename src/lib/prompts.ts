@@ -442,7 +442,7 @@ RULES:
 1. Identify 10-20 main concepts (Nodes)
 2. Identify relationships between them (Edges)
 3. Nodes should be short phrases (max 5 words)
-4. Edges should be labelled with verbs or short connecting phrases (e.g., "causes", "is part of", "requires")
+4. Edges should be labelled with verbs or short connecting phrases in ${langInfo.name} language
 5. The central theme of the material should be the root node
 6. Output MUST be valid JSON structure for graph visualization
 
@@ -454,12 +454,13 @@ Respond in this EXACT JSON format (and ONLY this JSON):
     { "id": "3", "label": "Sub Concept B" }
   ],
   "edges": [
-    { "id": "e1-2", "source": "1", "target": "2", "label": "includes" },
-    { "id": "e1-3", "source": "1", "target": "3", "label": "leads to" }
+    { "id": "e1-2", "source": "1", "target": "2", "label": "relation" },
+    { "id": "e1-3", "source": "1", "target": "3", "label": "relation" }
   ]
 }
 
-Note: "type": "input" is only for the root/central node. Other nodes don't need a type.`;
+Note: "type": "input" is only for the root/central node.
+CRITICAL: ALL LABELS (nodes and edges) MUST BE IN ${langInfo.name.toUpperCase()} LANGUAGE. Do not use English unless the term is technical/standard`;
 };
 
 export const getMindMapUserPrompt = (content: string) =>
@@ -472,41 +473,43 @@ export const getMindMapUserPrompt = (content: string) =>
 export const getStudyPlanSystemPrompt = (language: Language = "en") => {
   const langInfo = LANGUAGE_INSTRUCTIONS[language] || LANGUAGE_INSTRUCTIONS.en;
 
-  return `You are an expert learning strategist. Your task is to create a structured study plan from the provided learning material.
+  return `You are an expert learning strategist. Create a structured study plan with verification questions.
 
 ${getLanguageInstruction(language)}
 
 RULES:
-1. Break down the material into a logical daily schedule (3-7 days depending on length/complexity).
-2. Each task must be specific and actionable (e.g., "Read section on Algebra", "Practice 5 questions").
-3. Include a variety of activities: Reading, Summarizing, Quiz, Review.
-4. Output MUST be valid JSON structure.
+1. Break down the material into 3-7 days of study.
+2. Each task must be specific and actionable.
+3. Include variety: Reading, Summarizing, Quiz, Review.
+4. For EACH task, include a verification question the student must answer to prove understanding.
+5. The question should test understanding of specific concepts from that task.
 
-Respond in this EXACT JSON format (and ONLY this JSON):
+Respond in this EXACT JSON format:
 {
   "tasks": [
     {
       "day": 1,
       "task": "Read Introduction and Key Concepts",
-      "description": "Focus on understanding the basic definitions..."
+      "description": "Focus on understanding the basic definitions...",
+      "question": "What is the main difference between X and Y as described in the material?",
+      "questionHint": "Focus on the characteristics of each and compare them."
     },
     {
       "day": 1,
-      "task": "Create a summary of the introduction",
-      "description": "Write down 3 main points."
-    },
-    {
-      "day": 2,
-      "task": "Review Section 2",
-      "description": "..."
+      "task": "Summarize main points",
+      "description": "Write down 3 main takeaways.",
+      "question": "List 3 main points you learned.",
+      "questionHint": "Explain in your own words, no need to memorize."
     }
   ]
-}`;
+}
+
+IMPORTANT: Each task MUST have a 'question' and 'questionHint'. Questions should be in ${langInfo.name}.`;
 };
 
 export const getStudyPlanUserPrompt = (content: string, focus?: string) => {
   const focusInstruction = focus ? `\n\nUSER FOCUS/GOAL: "${focus}"\nAdjust the plan to prioritize this goal.` : "";
-  return `Create a study plan for this material:${focusInstruction}\n\n${content.slice(0, 15000)}`;
+  return `Create a study plan with verification questions for this material:${focusInstruction}\n\n${content.slice(0, 12000)}`;
 };
 
 
