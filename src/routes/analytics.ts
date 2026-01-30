@@ -196,7 +196,7 @@ router.post("/evaluate/:materialId", authMiddleware, async (req: Request, res: R
 
         if (userMessages.length < 1) {
             return res.status(400).json({
-                error: "Belum cukup percakapan untuk dievaluasi. Tanyakan beberapa pertanyaan terlebih dahulu!"
+                error: "Not enough conversations to evaluate. Ask some questions first!"
             });
         }
 

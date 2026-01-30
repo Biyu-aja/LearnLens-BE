@@ -126,7 +126,16 @@ router.get("/:id", async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        res.json({ success: true, material });
+        // Parse quiz options from JSON string to array (MySQL stores as JSON string)
+        const materialWithParsedQuizzes = {
+            ...material,
+            quizzes: material.quizzes.map((quiz) => ({
+                ...quiz,
+                options: typeof quiz.options === 'string' ? JSON.parse(quiz.options) : quiz.options,
+            })),
+        };
+
+        res.json({ success: true, material: materialWithParsedQuizzes });
     } catch (error) {
         console.error("Error fetching material:", error);
         res.status(500).json({ error: "Failed to fetch material" });
