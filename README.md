@@ -2,6 +2,17 @@
 
 Express.js backend API for the LearnLens AI-powered tutoring app.
 
+## 🛠 Tech Stack
+
+- **Runtime**: Node.js
+- **Framework**: Express.js
+- **Language**: TypeScript
+- **Database**: MySQL
+- **ORM**: Prisma
+- **Authentication**: JWT & BCrypt
+- **AI Integration**: OpenAI SDK (Compatible with Gemini/HaluAI)
+- **File Handling**: Multer, PDFKit, Mammoth
+
 ## 🚀 Quick Setup
 
 ### 1. Install Dependencies
@@ -12,112 +23,88 @@ npm install
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the root directory with:
+Create a `.env` file in the root directory with the following variables:
 
 ```bash
-# Database (PostgreSQL) - Your local connection
-DATABASE_URL="postgresql://postgres:password@localhost:5432/dbname?schema=public"
+# Database (MySQL) - Your local connection
+DATABASE_URL="mysql://root:password@localhost:3306/LearnLens"
 
-# Server
+# Server Configuration
 PORT=5000
 FRONTEND_URL="http://localhost:3000"
 
-# JWT Secret
-JWT_SECRET="learnlens-super-secret-jwt-key-2025"
+# Security
+JWT_SECRET="your-super-secret-jwt-key"
 
-# AI API (HaluAI Gateway)
-AI_API_KEY="ai-api-key"
-AI_API_URL="ai-api-url"
+# AI Configuration (HaluAI Gateway or OpenAI)
+AI_API_KEY="your-ai-api-key"
+AI_API_URL="your-ai-base-url"
 ```
 
-### 3. Create the Database
+### 3. Database Setup
 
-Make sure PostgreSQL is running, then create the database:
-
-```sql
-CREATE DATABASE "LearnLens";
-```
-
-Or using psql:
-```bash
-psql -U postgres -c "CREATE DATABASE \"LearnLens\";"
-```
-
-### 4. Set up Database Schema
+Ensure your MySQL server is running. Then, sync the database schema:
 
 ```bash
+# Generate Prisma Client
 npm run prisma:generate
+
+# Push schema to the database (creates tables)
 npm run prisma:push
 ```
 
-### 5. Start Development Server
+### 4. Start Development Server
 
 ```bash
 npm run dev
 ```
 
-The API will be running at `http://localhost:5000`
+The API will be available at `http://localhost:5000`
 
 ## 📚 API Endpoints
 
 ### Authentication
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/google` | Login with Google OAuth |
-| GET | `/api/auth/me` | Get current user |
+- `POST /api/auth/register` - Register a new user
+- `POST /api/auth/login` - Login
+- `GET /api/auth/me` - Get current user profile
 
 ### Materials
+- `GET /api/materials` - List all materials
+- `GET /api/materials/:id` - Get details of a material
+- `POST /api/materials` - Upload a new material (PDF/Text)
+- `GET /api/materials/:id/report` - Download PDF report
+- `DELETE /api/materials/:id` - Delete a material
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/materials` | List all materials |
-| GET | `/api/materials/:id` | Get single material |
-| POST | `/api/materials` | Upload new material |
-| POST | `/api/materials/:id/summary` | Generate AI summary |
-| DELETE | `/api/materials/:id` | Delete material |
-
-### Chat
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/chat/:materialId` | Get chat history |
-| POST | `/api/chat/:materialId` | Send message |
-| DELETE | `/api/chat/:materialId` | Clear chat history |
-
-### AI Features
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/ai/:materialId/concepts` | Get key concepts |
-| GET | `/api/ai/:materialId/quiz` | Get saved quizzes |
-| POST | `/api/ai/:materialId/quiz` | Generate new quiz |
-| DELETE | `/api/ai/:materialId/quiz` | Delete quizzes |
+### Chat & AI
+- `POST /api/chat/:materialId` - Chat with AI about the material
+- `GET /api/chat/:materialId` - Get chat history
+- `POST /api/ai/:materialId/quiz` - Generate a quiz
+- `GET /api/ai/:materialId/concepts` - Get key concepts
+- `POST /api/materials/:id/summary` - Generate summary
 
 ## 📁 Project Structure
 
 ```
 src/
-├── index.ts           # Express app entry point
+├── index.ts           # Application entry point
 ├── lib/
-│   ├── prisma.ts      # Prisma client
-│   └── ai.ts          # AI service (OpenAI-compatible)
+│   ├── prisma.ts      # Database client
+│   ├── ai.ts          # AI service handler
+│   └── report.ts      # PDF report generator
 ├── middleware/
-│   └── auth.ts        # JWT authentication
+│   └── auth.ts        # Authentication middleware
 └── routes/
-    ├── auth.ts        # Auth routes
-    ├── materials.ts   # Materials CRUD + upload
-    ├── chat.ts        # Chat functionality
-    └── ai.ts          # AI features (concepts, quiz)
+    ├── auth.ts        # Auth endpoints
+    ├── materials.ts   # Material management endpoints
+    ├── chat.ts        # Chat endpoints
+    └── ai.ts          # AI-specific endpoints
 ```
 
 ## 📝 Available Scripts
 
-```bash
-npm run dev              # Start development server with hot reload
-npm run build            # Build for production
-npm run start            # Start production server
-npm run prisma:generate  # Generate Prisma client
-npm run prisma:push      # Push schema to database
-npm run prisma:studio    # Open Prisma Studio
-```
+- `npm run dev`: Start the development server with hot-reloading.
+- `npm run build`: Compile TypeScript to JavaScript.
+- `npm run start`: Run the compiled production code.
+- `npm run prisma:generate`: Generate the Prisma client based on schema.
+- `npm run prisma:push`: Push the Prisma schema state to the database.
+- `npm run prisma:studio`: Open Prisma Studio to view/edit data.
