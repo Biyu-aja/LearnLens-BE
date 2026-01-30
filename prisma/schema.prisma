@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -226,7 +226,7 @@ model Message {
 model Quiz {
   id        String   @id @default(cuid())
   question  String   @db.Text
-  options   String[] // Array of answer options
+  options   String   @db.Text // JSON array of answer options
   answer    Int // Index of correct answer
   hint      String?  @db.Text // Helpful clue to guide thinking
   createdAt DateTime @default(now())

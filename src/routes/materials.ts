@@ -763,5 +763,64 @@ router.post("/:id/unpublish", async (req: Request, res: Response): Promise<void>
     }
 });
 
+// GET /api/materials/:id/report - Download learning report PDF
+router.get("/:id/report", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const material = await prisma.material.findFirst({
+            where: {
+                id: req.params.id,
+                userId: req.user!.id,
+            },
+            include: {
+                messages: {
+                    orderBy: { createdAt: "asc" },
+                },
+                quizzes: true,
+            },
+        });
+
+        if (!material) {
+            res.status(404).json({ error: "Material not found" });
+            return;
+        }
+
+        // Parse JSON fields safely
+        let glossary = [];
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if ((material as any).glossary) glossary = JSON.parse((material as any).glossary as string);
+        } catch (e) { console.error("Error parsing glossary", e); }
+
+        let flashcards = [];
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if ((material as any).flashcards) flashcards = JSON.parse((material as any).flashcards as string);
+        } catch (e) { console.error("Error parsing flashcards", e); }
+
+        // Import dynamically to avoid circular dependency issues if any, though likely not needed here
+        const { generateLearningReport } = await import("../lib/report");
+
+        const doc = generateLearningReport({
+            material,
+            messages: material.messages,
+            summary: material.summary,
+            quizzes: material.quizzes,
+            glossary,
+            flashcards
+        });
+
+        // Set headers
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="${material.title.replace(/[^a-zA-Z0-9]/g, "_")}_Report.pdf"`);
+
+        doc.pipe(res);
+        doc.end();
+
+    } catch (error) {
+        console.error("Error generating report:", error);
+        res.status(500).json({ error: "Failed to generate report" });
+    }
+});
+
 export default router;
 

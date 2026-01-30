@@ -82,12 +82,13 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
         });
 
         // Save quiz questions to database (linked to the main material)
+        // Note: options are stored as JSON string for MySQL compatibility
         const savedQuizzes = await Promise.all(
             questions.map((q) =>
                 prisma.quiz.create({
                     data: {
                         question: q.question,
-                        options: q.options,
+                        options: JSON.stringify(q.options),
                         answer: q.answer,
                         hint: q.hint || null,
                         materialId: req.params.materialId,
@@ -96,7 +97,13 @@ router.post("/:materialId/quiz", async (req: Request, res: Response): Promise<vo
             )
         );
 
-        res.json({ success: true, quizzes: savedQuizzes });
+        // Parse options back to array for response
+        const quizzesWithParsedOptions = savedQuizzes.map((quiz) => ({
+            ...quiz,
+            options: JSON.parse(quiz.options),
+        }));
+
+        res.json({ success: true, quizzes: quizzesWithParsedOptions });
     } catch (error) {
         console.error("Error generating quiz:", error);
         res.status(500).json({ error: "Failed to generate quiz" });
@@ -123,7 +130,13 @@ router.get("/:materialId/quiz", async (req: Request, res: Response): Promise<voi
             orderBy: { createdAt: "desc" },
         });
 
-        res.json({ success: true, quizzes });
+        // Parse options from JSON string to array
+        const quizzesWithParsedOptions = quizzes.map((quiz) => ({
+            ...quiz,
+            options: typeof quiz.options === 'string' ? JSON.parse(quiz.options) : quiz.options,
+        }));
+
+        res.json({ success: true, quizzes: quizzesWithParsedOptions });
     } catch (error) {
         console.error("Error fetching quizzes:", error);
         res.status(500).json({ error: "Failed to fetch quizzes" });
