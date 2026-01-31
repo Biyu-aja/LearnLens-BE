@@ -338,7 +338,7 @@ router.post("/:materialId/glossary/term", async (req: Request, res: Response): P
 
         // Generate definition using AI
         const { default: ai } = await import("../lib/ai");
-        const defaultModel = "gemini-2.5-flash-lite";
+        const defaultModel = "gemini-3-flash";
 
         const response = await ai.chat.completions.create({
             model: model || defaultModel,
@@ -437,7 +437,7 @@ router.post("/:materialId/cleanup", async (req: Request, res: Response): Promise
 
         // Use AI to identify and clean up unnecessary parts
         const { default: ai } = await import("../lib/ai");
-        const defaultModel = "gemini-2.5-flash-lite";
+        const defaultModel = "gemini-3-flash";
 
         const response = await ai.chat.completions.create({
             model: defaultModel,

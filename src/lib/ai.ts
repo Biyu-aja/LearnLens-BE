@@ -21,33 +21,17 @@ import {
 // Get configuration from environment
 const apiKey = process.env.AI_API_KEY;
 const baseURL = process.env.AI_API_URL || "https://gateway.haluai.my.id/v1";
-const defaultModel = process.env.AI_MODEL || "gemini-2.5-flash-lite";
+const defaultModel = process.env.AI_MODEL || "gemini-3-flash";
 
 // Available models with their info (from HaluAI Gateway)
 export const AI_MODELS = [
-    {
-        id: "gemini-2.5-flash-lite",
-        name: "Gemini 2.5 Flash Lite",
-        price: "Rp 2.500/1M tokens",
-        description: "Model paling ringan dan cepat. Cocok untuk tugas sederhana.",
-        pros: ["Tercepat", "Termurah", "Response instan"],
-        cons: ["Kurang akurat untuk tugas kompleks", "Context window lebih kecil"]
-    },
-    {
-        id: "gemini-2.5-flash",
-        name: "Gemini 2.5 Flash",
-        price: "Rp 2.500/1M tokens",
-        description: "Keseimbangan antara kecepatan dan kualitas. Rekomendasi untuk sebagian besar penggunaan.",
-        pros: ["Cepat", "Akurat", "Context window besar (1M tokens)"],
-        cons: ["Sedikit lebih lambat dari Lite"]
-    },
     {
         id: "gemini-3-flash",
         name: "Gemini 3 Flash",
         price: "Rp 2.500/1M tokens",
         description: "Model terbaru dengan kemampuan reasoning lebih baik.",
         pros: ["Model terbaru", "Reasoning terbaik", "Multimodal"],
-        cons: ["Masih dalam development", "Bisa lebih lambat"]
+        cons: ["Masih dalam development"]
     },
 ];
 
@@ -445,7 +429,7 @@ export async function isContentSafe(
 
         // We use a strict system prompt to detect unsafe content
         const response = await client.chat.completions.create({
-            model: "gemini-2.5-flash-lite", // Use a cheap/fast model for moderation
+            model: "gemini-3-flash", // Use default model for moderation
             messages: [
                 {
                     role: "system",

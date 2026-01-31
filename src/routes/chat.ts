@@ -95,7 +95,7 @@ router.post("/:materialId", async (req: Request, res: Response): Promise<void> =
         const maxContext = customConfig ? (req.user!.customMaxContext ?? 8000) : (req.user!.maxContext ?? 500000);
 
         // Get AI response using user's preferred model (or custom API)
-        const preferredModel = req.user!.preferredModel ?? "gemini-2.5-flash-lite";
+        const preferredModel = req.user!.preferredModel ?? "gemini-3-flash";
         // Use smaller context for empty/research mode materials
         const effectiveMaxContext = (material.content && material.content.trim()) ? maxContext : 1000;
         const aiResponse = await chatWithMaterial(
@@ -211,7 +211,7 @@ router.post("/:materialId/stream", async (req: Request, res: Response): Promise<
 
         try {
             // Stream AI response with language support
-            const preferredModel = req.user!.preferredModel ?? "gemini-2.5-flash-lite";
+            const preferredModel = req.user!.preferredModel ?? "gemini-3-flash";
             // Use smaller context for empty/research mode materials
             const effectiveMaxContext = (material.content && material.content.trim()) ? maxContext : 1000;
             await chatWithMaterialStream(

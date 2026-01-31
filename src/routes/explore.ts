@@ -23,8 +23,8 @@ router.get("/", async (req: Request, res: Response) => {
                 ...(filterUserId ? { userId: filterUserId } : {}),
                 ...(searchQuery ? {
                     OR: [
-                        { title: { contains: searchQuery, mode: 'insensitive' } },
-                        { description: { contains: searchQuery, mode: 'insensitive' } }
+                        { title: { contains: searchQuery } },
+                        { description: { contains: searchQuery } }
                     ]
                 } : {})
             },

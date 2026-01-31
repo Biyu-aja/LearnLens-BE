@@ -15,7 +15,7 @@ model User {
   name             String?
   email            String    @unique
   password         String // Hashed password
-  preferredModel   String    @default("gemini-2.5-flash-lite") // AI model preference
+  preferredModel   String    @default("gemini-3-flash") // AI model preference
   maxTokens        Int       @default(1000) // Max tokens for generation
   maxContext       Int       @default(200000) // Max characters of content sent to AI (~200k for performance safety)
   customApiUrl     String? // Custom API URL (optional)

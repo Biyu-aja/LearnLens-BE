@@ -59,7 +59,7 @@ export async function authMiddleware(
             email: user.email,
             name: user.name || undefined,
             image: user.image || undefined,
-            preferredModel: user.preferredModel || "gemini-2.5-flash-lite",
+            preferredModel: user.preferredModel || "gemini-3-flash",
             maxTokens: user.maxTokens || 1000,
             maxContext: (user as any).maxContext || 500000,
             customApiUrl: (user as any).customApiUrl ?? undefined,

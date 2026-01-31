@@ -377,7 +377,7 @@ router.post(
             if (smartCleanup && content.length > 100) {
                 try {
                     const { default: ai } = await import("../lib/ai");
-                    const defaultModel = "gemini-2.5-flash-lite";
+                    const defaultModel = "gemini-3-flash";
 
                     const response = await ai.chat.completions.create({
                         model: defaultModel,
